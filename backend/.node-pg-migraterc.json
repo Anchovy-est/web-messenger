@@ -1,0 +1,6 @@
+{
+  "migrations-dir": "migrations",
+  "migration-file-language": "js",
+  "schema": "public",
+  "database-url-var": "DATABASE_URL"
+}

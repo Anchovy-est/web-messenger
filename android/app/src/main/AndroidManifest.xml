@@ -1,0 +1,81 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Every network call this app makes (the REST API, Socket.IO, media
+         up/downloads) needs this — it belongs here, not only in the debug
+         manifest override (src/debug/AndroidManifest.xml also declares
+         it, redundantly but harmlessly, for the unrelated reason
+         explained there: Flutter's own tooling needs it for hot
+         reload/the VM service, independent of anything this app itself
+         does over the network). Every build run before this one used
+         the debug flavor, which is exactly why a release build missing
+         this went unnoticed until release mode was actually built and
+         tested for the first time. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Only needed for picking a profile picture via the camera
+         (image_picker's ImageSource.camera); gallery picking uses
+         the system photo picker and needs no runtime permission. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <!-- For recording voice messages (the `record` plugin) — the actual
+         runtime prompt is triggered by AudioRecorderService.hasPermission
+         the first time a user taps the mic button, not just by this
+         manifest entry being present. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Android 13+ requires this explicit runtime permission to show
+         any notification at all, including FCM push and the
+         flutter_local_notifications ones shown while the app is in the
+         foreground — requested by PushNotificationService.initialize
+         via FirebaseMessaging.instance.requestPermission(), which
+         covers both under one prompt. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application
+        android:label="mobile_messenger"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <!-- Default small icon FCM uses for a notification received
+             while the app has no foreground handler running (killed/
+             backgrounded) — the launcher icon, same as every other
+             notification this app shows. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

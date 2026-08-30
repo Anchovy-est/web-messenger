@@ -1,0 +1,59 @@
+# One-command startup: `docker compose up` brings up Postgres and the
+# backend API/Socket.IO server, fully migrated and ready.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: messenger
+      POSTGRES_PASSWORD: messenger
+      POSTGRES_DB: messenger
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U messenger -d messenger"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgres://messenger:messenger@db:5432/messenger
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev_access_secret_change_me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev_refresh_secret_change_me}
+      # Server-side master key for the one profile field (bio) encrypted
+      # at rest; see backend/src/utils/fieldCrypto.js. Same "override in
+      # a real deployment" posture as the two JWT secrets above.
+      PROFILE_ENCRYPTION_KEY: ${PROFILE_ENCRYPTION_KEY:-dev_profile_encryption_key_change_me}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Mobile Messenger <no-reply@mobile-messenger.local>}
+      # Points at the bind-mounted secrets/ directory below. Push
+      # notifications stay disabled (no error) until a real
+      # firebase-service-account.json is dropped in there — see
+      # backend/secrets/README.md and docs/PUSH_NOTIFICATIONS.md.
+      FIREBASE_SERVICE_ACCOUNT_PATH: /app/secrets/firebase-service-account.json
+    ports:
+      # Host port 3001 -> container port 3000. Host 3000 was found occupied
+      # by an unrelated local process (wslrelay.exe) during development on
+      # this machine; the container listens on 3000 internally regardless.
+      - "3001:3000"
+    volumes:
+      - backend_uploads:/app/uploads
+      - ./backend/secrets:/app/secrets:ro
+
+volumes:
+  db_data:
+  backend_uploads:

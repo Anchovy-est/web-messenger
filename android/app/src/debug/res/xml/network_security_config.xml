@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only: permits plain HTTP (cleartext) so the app can talk to the
+  local dev backend (10.0.2.2 on an emulator, adb-reverse'd localhost, or
+  a LAN IP, all served over http:// since the dev backend has no TLS
+  set up). This file only exists in the debug source set, so release builds
+  keep Android's secure default of blocking cleartext traffic entirely —
+  see android/app/src/main/AndroidManifest.xml, which has no such
+  override.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
