@@ -14,6 +14,7 @@ import 'package:mobile_messenger/providers/core_providers.dart';
 import 'package:mobile_messenger/services/api_client.dart';
 import 'package:mobile_messenger/widgets/floral_background.dart';
 
+import '../../support/compact_viewport.dart';
 import '../../support/fake_chat_repository.dart';
 import '../../support/fake_secure_storage_service.dart';
 import '../../support/fake_socket_service.dart';
@@ -92,6 +93,7 @@ class _FakeProfileRepository extends ProfileRepository {
 Future<_FakeProfileRepository> _pumpAuthenticatedApp(
   WidgetTester tester,
 ) async {
+  useCompactViewport(tester);
   final profileRepository = _FakeProfileRepository();
   await tester.pumpWidget(
     ProviderScope(
@@ -284,6 +286,7 @@ void main() {
   testWidgets('the theme choice persists across a restart-equivalent reload', (
     tester,
   ) async {
+    useCompactViewport(tester);
     final storage = FakeSecureStorageService(accessToken: 'token');
     await tester.pumpWidget(
       ProviderScope(

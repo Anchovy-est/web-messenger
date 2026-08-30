@@ -16,6 +16,7 @@ import '../features/profile/presentation/edit_profile_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/search/presentation/search_screen.dart';
 import '../models/user.dart';
+import 'app_shell.dart';
 
 /// Central route table, gated by [SessionController]'s state:
 /// - `unknown` (still restoring a persisted session): splash screen only.
@@ -54,23 +55,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
     },
     routes: [
-      GoRoute(
-        path: '/',
-        builder: (context, state) {
-          if (status == SessionStatus.authenticated) {
-            return const ChatListScreen();
-          }
-          return const SplashScreen();
-        },
-      ),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
-      ),
-      GoRoute(
-        path: '/verify-email',
-        builder: (context, state) => const VerifyEmailScreen(),
       ),
       GoRoute(
         path: '/forgot-password',
@@ -82,33 +70,57 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           initialEmail: state.uri.queryParameters['email'],
         ),
       ),
-      GoRoute(
-        path: '/profile',
-        builder: (context, state) => const ProfileScreen(),
-      ),
-      GoRoute(
-        path: '/profile/edit',
-        builder: (context, state) =>
-            EditProfileScreen(user: state.extra as User),
-      ),
-      GoRoute(
-        path: '/search',
-        builder: (context, state) => const SearchScreen(),
-      ),
-      GoRoute(
-        path: '/invitations',
-        builder: (context, state) => const InvitationsScreen(),
-      ),
-      GoRoute(
-        path: '/chats/:id',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          return ChatDetailScreen(
-            chatId: state.pathParameters['id']!,
-            title: extra?['title'] as String?,
-            avatarUrl: extra?['avatarUrl'] as String?,
-          );
-        },
+      // Every authenticated-area route is wrapped in one persistent
+      // `AppShell` — on a phone-sized window it renders each of these
+      // exactly as if this ShellRoute didn't exist (see `AppShell`'s own
+      // doc comment); on a desktop/web-sized window it adds the
+      // sidebar + master-detail chrome around them instead.
+      ShellRoute(
+        builder: (context, state, child) =>
+            AppShell(state: state, child: child),
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) {
+              if (status == SessionStatus.authenticated) {
+                return const ChatListScreen();
+              }
+              return const SplashScreen();
+            },
+          ),
+          GoRoute(
+            path: '/verify-email',
+            builder: (context, state) => const VerifyEmailScreen(),
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: '/profile/edit',
+            builder: (context, state) =>
+                EditProfileScreen(user: state.extra as User),
+          ),
+          GoRoute(
+            path: '/search',
+            builder: (context, state) => const SearchScreen(),
+          ),
+          GoRoute(
+            path: '/invitations',
+            builder: (context, state) => const InvitationsScreen(),
+          ),
+          GoRoute(
+            path: '/chats/:id',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>?;
+              return ChatDetailScreen(
+                chatId: state.pathParameters['id']!,
+                title: extra?['title'] as String?,
+                avatarUrl: extra?['avatarUrl'] as String?,
+              );
+            },
+          ),
+        ],
       ),
     ],
   );

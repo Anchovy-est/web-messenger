@@ -13,6 +13,7 @@ import 'package:mobile_messenger/models/user.dart';
 import 'package:mobile_messenger/providers/core_providers.dart';
 import 'package:mobile_messenger/services/api_client.dart';
 
+import '../../support/compact_viewport.dart';
 import '../../support/fake_chat_repository.dart';
 import '../../support/fake_secure_storage_service.dart';
 import '../../support/fake_socket_service.dart';
@@ -70,6 +71,7 @@ Future<void> _pumpApp(
   required _FakeAuthRepository repository,
   FakeSecureStorageService? storage,
 }) async {
+  useCompactViewport(tester);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [

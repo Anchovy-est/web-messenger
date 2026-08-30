@@ -12,7 +12,22 @@ import '../../../widgets/user_avatar.dart';
 import '../../auth/presentation/session_controller.dart';
 import 'chat_list_controller.dart';
 
-/// The app's real landing screen once signed in — the chat list.
+/// The `extra` map every chat-tile tap hands to the `/chats/:id` route —
+/// pulled out so the mobile push (below) and the desktop shell's inline
+/// selection (see `AppShell`) build it identically from the same [Chat]
+/// instead of each re-deriving it.
+Map<String, dynamic> chatRouteExtra(Chat chat) => {
+  'title': chat.displayName('Unknown'),
+  'avatarUrl': chat.otherParticipant?.avatarUrl,
+};
+
+/// The app's real landing screen once signed in — the chat list. This is
+/// the full-screen phone experience: its own [AppBar] with the
+/// search/invitations/profile/logout actions, tapping a chat pushes
+/// [ChatDetailScreen] as a new full-screen route. On a wide (desktop/web)
+/// window, `AppShell` doesn't render this screen at all — it composes
+/// [ChatListBody] directly, side-by-side with the open chat, instead —
+/// so nothing here needs to know or care that a wider layout exists.
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
 
@@ -48,12 +63,7 @@ class ChatListScreen extends ConsumerWidget {
                   ref.read(sessionControllerProvider.notifier).logout(),
             ),
           ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Chats'),
-              Tab(text: 'Archived'),
-            ],
-          ),
+          bottom: const TabBar(tabs: chatListTabs),
         ),
         body: Column(
           children: [
@@ -71,8 +81,13 @@ class ChatListScreen extends ConsumerWidget {
                   ),
                 ],
               ),
-            const Expanded(
-              child: TabBarView(children: [_ActiveTab(), _ArchivedTab()]),
+            Expanded(
+              child: ChatListBody(
+                onChatSelected: (chat) => context.push(
+                  '/chats/${chat.id}',
+                  extra: chatRouteExtra(chat),
+                ),
+              ),
             ),
           ],
         ),
@@ -81,8 +96,58 @@ class ChatListScreen extends ConsumerWidget {
   }
 }
 
+/// The `Tab`s shared by [ChatListScreen]'s `AppBar.bottom` (mobile) and
+/// `AppShell`'s own plain `TabBar` above [ChatListBody] on desktop — same
+/// two tabs either way, just mounted in a different chrome.
+const chatListTabs = [Tab(text: 'Chats'), Tab(text: 'Archived')];
+
+/// The Active/Archived tabbed list of chats — every bit of this screen
+/// that isn't chrome (app bar, connection/verification banners), and so
+/// the one piece [ChatListScreen] (mobile, full screen) and the desktop
+/// shell's chat-list pane (see `AppShell`) both build on, instead of the
+/// list-rendering/archive logic existing twice. Must be used inside a
+/// `DefaultTabController(length: 2)` ancestor — neither of this widget's
+/// two call sites builds a `TabBarView` without also providing one.
+class ChatListBody extends StatelessWidget {
+  const ChatListBody({
+    super.key,
+    required this.onChatSelected,
+    this.selectedChatId,
+  });
+
+  /// Called with the tapped [Chat] — mobile pushes `/chats/:id` as a new
+  /// full-screen route; the desktop shell instead just updates which chat
+  /// is shown in its already-visible detail pane (see `AppShell`).
+  final ValueChanged<Chat> onChatSelected;
+
+  /// The chat currently open in an adjacent detail pane, if any —
+  /// highlighted in the list so it's clear which conversation is showing.
+  /// Always `null` on mobile, where the list and the open chat are never
+  /// both on screen at once.
+  final String? selectedChatId;
+
+  @override
+  Widget build(BuildContext context) {
+    return TabBarView(
+      children: [
+        _ActiveTab(
+          onChatSelected: onChatSelected,
+          selectedChatId: selectedChatId,
+        ),
+        _ArchivedTab(
+          onChatSelected: onChatSelected,
+          selectedChatId: selectedChatId,
+        ),
+      ],
+    );
+  }
+}
+
 class _ActiveTab extends ConsumerWidget {
-  const _ActiveTab();
+  const _ActiveTab({required this.onChatSelected, this.selectedChatId});
+
+  final ValueChanged<Chat> onChatSelected;
+  final String? selectedChatId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -117,6 +182,8 @@ class _ActiveTab extends ConsumerWidget {
                     final chat = chats[index];
                     return _ChatTile(
                       chat: chat,
+                      selected: chat.id == selectedChatId,
+                      onTap: () => onChatSelected(chat),
                       trailing: IconButton(
                         icon: const Icon(Icons.archive_outlined),
                         tooltip: 'Archive',
@@ -134,7 +201,10 @@ class _ActiveTab extends ConsumerWidget {
 }
 
 class _ArchivedTab extends ConsumerWidget {
-  const _ArchivedTab();
+  const _ArchivedTab({required this.onChatSelected, this.selectedChatId});
+
+  final ValueChanged<Chat> onChatSelected;
+  final String? selectedChatId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -161,6 +231,8 @@ class _ArchivedTab extends ConsumerWidget {
                     final chat = chats[index];
                     return _ChatTile(
                       chat: chat,
+                      selected: chat.id == selectedChatId,
+                      onTap: () => onChatSelected(chat),
                       trailing: IconButton(
                         icon: const Icon(Icons.unarchive_outlined),
                         tooltip: 'Unarchive',
@@ -203,10 +275,17 @@ Widget _wrapRefreshable({
 }
 
 class _ChatTile extends StatelessWidget {
-  const _ChatTile({required this.chat, required this.trailing});
+  const _ChatTile({
+    required this.chat,
+    required this.trailing,
+    required this.onTap,
+    this.selected = false,
+  });
 
   final Chat chat;
   final Widget trailing;
+  final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +293,8 @@ class _ChatTile extends StatelessWidget {
     final lastMessage = chat.lastMessage;
 
     return ListTile(
+      selected: selected,
+      selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
       leading: UserAvatar(
         avatarUrl: chat.otherParticipant?.avatarUrl,
         radius: 24,
@@ -240,10 +321,7 @@ class _ChatTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       trailing: trailing,
-      onTap: () => context.push(
-        '/chats/${chat.id}',
-        extra: {'title': title, 'avatarUrl': chat.otherParticipant?.avatarUrl},
-      ),
+      onTap: onTap,
     );
   }
 }

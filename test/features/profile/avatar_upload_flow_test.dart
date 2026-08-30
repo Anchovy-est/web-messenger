@@ -18,6 +18,7 @@ import 'package:mobile_messenger/providers/core_providers.dart';
 import 'package:mobile_messenger/services/api_client.dart';
 import 'package:mobile_messenger/widgets/user_avatar.dart';
 
+import '../../support/compact_viewport.dart';
 import '../../support/fake_chat_repository.dart';
 import '../../support/fake_secure_storage_service.dart';
 import '../../support/fake_socket_service.dart';
@@ -78,6 +79,7 @@ Future<void> _pumpAuthenticatedApp(
   WidgetTester tester, {
   required _FakeProfileRepository profileRepository,
 }) async {
+  useCompactViewport(tester);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [

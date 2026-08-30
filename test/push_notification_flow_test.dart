@@ -14,6 +14,7 @@ import 'package:mobile_messenger/models/user.dart';
 import 'package:mobile_messenger/providers/core_providers.dart';
 import 'package:mobile_messenger/services/api_client.dart';
 
+import 'support/compact_viewport.dart';
 import 'support/fake_secure_storage_service.dart';
 import 'support/fake_socket_service.dart';
 
@@ -91,6 +92,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
+    useCompactViewport(tester);
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
