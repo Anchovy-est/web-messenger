@@ -58,7 +58,8 @@ async function sendMedia(req, res) {
     req.userId,
     req.params.id,
     req.file,
-    req.body.type
+    req.body.type,
+    req.body.body
   );
 
   const io = req.app.get('io');

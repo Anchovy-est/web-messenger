@@ -4,11 +4,12 @@ part of 'chat_detail_screen.dart';
 /// local, never-encrypted, not-yet-uploaded image/video/audio bytes
 /// (nothing's been uploaded yet, or the upload didn't make it) —
 /// rendered directly. Every other status means the server has an
-/// end-to-end-encrypted copy: [chatKey] decrypts it after downloading,
-/// via [messageRepositoryProvider]/[encryptionServiceProvider]. A null
-/// [chatKey] here means this chat's key hasn't been derived yet (see
-/// `ChatDetailController.chatKey`) — shown as a lock icon rather than
-/// attempting (and failing) to decrypt.
+/// end-to-end-encrypted copy: [_fetchAndDecrypt] decrypts it after
+/// downloading, using whichever key applies to *this* message specifically
+/// (see `ChatDetailController.keyForSender` — a 1:1 chat's single shared
+/// key regardless of sender, or a group's per-sender pairwise key). No
+/// key available yet for this message's sender is shown as a lock icon
+/// rather than attempting (and failing) to decrypt.
 ///
 /// Stateful (not a plain build-method fetch) so the fetch+decrypt only
 /// ever runs *once*, in [initState] — starting a fresh
@@ -20,10 +21,9 @@ part of 'chat_detail_screen.dart';
 /// can make `pumpAndSettle()` in a widget test never observe a settled
 /// frame at all.
 class _ImageContent extends ConsumerStatefulWidget {
-  const _ImageContent({required this.message, required this.chatKey});
+  const _ImageContent({required this.message});
 
   final Message message;
-  final SecretKey? chatKey;
 
   static const _size = 220.0;
 
@@ -37,13 +37,17 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
   @override
   void initState() {
     super.initState();
-    final url = widget.message.mediaUrl;
-    final key = widget.chatKey;
+    final message = widget.message;
     final isLocal =
-        widget.message.status == MessageStatus.sending ||
-        widget.message.status == MessageStatus.failed;
-    if (url != null && !isLocal && key != null) {
-      _future = _fetchAndDecrypt(ref, url, key);
+        message.status == MessageStatus.sending ||
+        message.status == MessageStatus.failed;
+    final hasKey =
+        ref
+            .read(chatDetailControllerProvider(message.chatId).notifier)
+            .keyForSender(message.senderId) !=
+        null;
+    if (message.mediaUrl != null && !isLocal && hasKey) {
+      _future = _fetchAndDecrypt(ref, message);
     }
   }
 
@@ -91,17 +95,49 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
   }
 }
 
-Future<Uint8List> _fetchAndDecrypt(
-  WidgetRef ref,
-  String mediaUrl,
-  SecretKey chatKey,
-) async {
+/// Downloads and decrypts a *remote* (already-uploaded) image/video/
+/// audio message's bytes. For a 1:1 chat, that's one decrypt with the
+/// chat's shared key. A group has no such single shared key — instead,
+/// [message.body] carries this device's own wrapped copy of the
+/// one-time key the media was actually encrypted with (see
+/// `EncryptionService.encryptMediaForRecipients`); that's unwrapped
+/// first, using the pairwise key shared with whoever sent it, and *that*
+/// (not the sender key itself) is what decrypts the downloaded bytes.
+Future<Uint8List> _fetchAndDecrypt(WidgetRef ref, Message message) async {
+  final controller = ref.read(
+    chatDetailControllerProvider(message.chatId).notifier,
+  );
+  final senderKey = controller.keyForSender(message.senderId);
+  if (senderKey == null) {
+    throw StateError('No key available for this message\'s sender yet.');
+  }
+
   final encryptedBytes = await ref
       .read(messageRepositoryProvider)
-      .downloadMedia(mediaUrl);
-  return ref
-      .read(encryptionServiceProvider)
-      .decryptBytes(chatKey, encryptedBytes);
+      .downloadMedia(message.mediaUrl!);
+  final encryptionService = ref.read(encryptionServiceProvider);
+
+  if (!controller.isGroup) {
+    return encryptionService.decryptBytes(senderKey, encryptedBytes);
+  }
+
+  final myId = ref.read(sessionControllerProvider).user?.id;
+  final wrappedKeysJson = message.body;
+  if (myId == null || wrappedKeysJson == null) {
+    throw StateError('No wrapped media key available for this device.');
+  }
+  final mediaKeyBytes = await encryptionService.unwrapMediaKeyBytes(
+    wrappedKeysJson: wrappedKeysJson,
+    myUserId: myId,
+    senderKey: senderKey,
+  );
+  if (mediaKeyBytes == null) {
+    throw StateError('This device has no entry in the wrapped media key.');
+  }
+  return encryptionService.decryptBytes(
+    SecretKey(mediaKeyBytes),
+    encryptedBytes,
+  );
 }
 
 /// Same local-vs-network-and-encrypted split as [_ImageContent], but a
@@ -115,10 +151,9 @@ Future<Uint8List> _fetchAndDecrypt(
 /// which of those is actually reachable differs by platform (see
 /// lib/core/media/video_bytes_source.dart).
 class _VideoContent extends ConsumerStatefulWidget {
-  const _VideoContent({required this.message, required this.chatKey});
+  const _VideoContent({required this.message});
 
   final Message message;
-  final SecretKey? chatKey;
 
   @override
   ConsumerState<_VideoContent> createState() => _VideoContentState();
@@ -149,14 +184,12 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
       }
       bytes = localBytes;
     } else {
-      final url = widget.message.mediaUrl;
-      final key = widget.chatKey;
-      if (url == null || key == null) {
+      if (widget.message.mediaUrl == null) {
         setState(() => _failed = true);
         return;
       }
       try {
-        bytes = await _fetchAndDecrypt(ref, url, key);
+        bytes = await _fetchAndDecrypt(ref, widget.message);
       } catch (_) {
         if (mounted) setState(() => _failed = true);
         return;
@@ -256,10 +289,9 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
 /// actually taps play, so opening a thread full of voice messages
 /// doesn't eagerly download and decrypt every one of them.
 class _AudioContent extends ConsumerStatefulWidget {
-  const _AudioContent({required this.message, required this.chatKey});
+  const _AudioContent({required this.message});
 
   final Message message;
-  final SecretKey? chatKey;
 
   @override
   ConsumerState<_AudioContent> createState() => _AudioContentState();
@@ -309,18 +341,12 @@ class _AudioContentState extends ConsumerState<_AudioContent> {
       setState(() => _source = BytesSource(localBytes));
       return;
     }
-    final url = widget.message.mediaUrl;
-    if (url == null) {
-      setState(() => _sourceFailed = true);
-      return;
-    }
-    final key = widget.chatKey;
-    if (key == null) {
+    if (widget.message.mediaUrl == null) {
       setState(() => _sourceFailed = true);
       return;
     }
     try {
-      final bytes = await _fetchAndDecrypt(ref, url, key);
+      final bytes = await _fetchAndDecrypt(ref, widget.message);
       if (!mounted) return;
       setState(() => _source = BytesSource(bytes));
     } catch (_) {

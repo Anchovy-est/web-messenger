@@ -298,6 +298,7 @@ class _ChatTile extends StatelessWidget {
       leading: UserAvatar(
         avatarUrl: chat.otherParticipant?.avatarUrl,
         radius: 24,
+        placeholderIcon: chat.isGroup ? Icons.groups : Icons.person,
       ),
       title: Row(
         mainAxisSize: MainAxisSize.min,

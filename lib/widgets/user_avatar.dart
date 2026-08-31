@@ -7,10 +7,22 @@ import '../core/media_url.dart';
 /// hiccup, deleted file). Reused wherever a user is shown: profile
 /// screen, search results, chat list/messages.
 class UserAvatar extends StatefulWidget {
-  const UserAvatar({super.key, required this.avatarUrl, this.radius = 40});
+  const UserAvatar({
+    super.key,
+    required this.avatarUrl,
+    this.radius = 40,
+    this.placeholderIcon = Icons.person,
+  });
 
   final String? avatarUrl;
   final double radius;
+
+  /// Shown in place of a picture when there isn't one (or it fails to
+  /// load) — a generic person by default, but a group chat (which has
+  /// no single "the" picture to fall back to any more than it has a
+  /// single "the" other participant) passes `Icons.groups` instead, so
+  /// its placeholder doesn't read as if it were a 1:1 chat.
+  final IconData placeholderIcon;
 
   @override
   State<UserAvatar> createState() => _UserAvatarState();
@@ -48,7 +60,7 @@ class _UserAvatarState extends State<UserAvatar> {
       radius: widget.radius,
       backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
       child: Icon(
-        Icons.person,
+        widget.placeholderIcon,
         size: widget.radius,
         color: Theme.of(context).colorScheme.onSecondaryContainer,
       ),

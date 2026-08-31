@@ -142,4 +142,111 @@ class EncryptionService {
       throw const DecryptionFailedException();
     }
   }
+
+  // --- Group messaging ---------------------------------------------------
+  //
+  // A 1:1 chat's single [deriveChatKey] result works because ECDH between
+  // exactly two people is symmetric (Alice-priv · Bob-pub == Bob-priv ·
+  // Alice-pub) — there's no equivalent single shared secret for three or
+  // more people without a real group key-agreement protocol (Signal's
+  // Sender Keys, MLS, …), which is well beyond this app's scope. Instead,
+  // a group message is encrypted once *per recipient*, each with that
+  // recipient's own pairwise [deriveChatKey] result (same chatId salt,
+  // so it's still a different key than any 1:1 chat the same two people
+  // might separately have) — the caller (`ChatDetailController`) is
+  // expected to include *every* current participant, itself included
+  // (see its own doc comment on why: without a self-entry, a device
+  // could never decrypt its own sent messages again after a reload).
+  //
+  // Text and media use the same wrap-per-recipient idea, just wrapping
+  // different things: text wraps the plaintext itself directly; media
+  // wraps a fresh one-time key instead (so the media bytes are only ever
+  // encrypted *once*, not once per recipient — real savings once a
+  // group's image/video messages are more than trivially sized).
+
+  /// Encrypts [plaintext] once per entry in [recipientKeys] (participant
+  /// user id -> this device's pairwise key with them) and returns the
+  /// JSON-encoded `{userId: base64Envelope}` map — the wire format a
+  /// group text message's `body` is sent/stored as, in place of the
+  /// single envelope a 1:1 message's `body` is.
+  Future<String> encryptTextForRecipients(
+    Map<String, SecretKey> recipientKeys,
+    String plaintext,
+  ) async {
+    final envelopes = <String, String>{};
+    for (final entry in recipientKeys.entries) {
+      envelopes[entry.key] = await encryptText(entry.value, plaintext);
+    }
+    return jsonEncode(envelopes);
+  }
+
+  /// The inverse of [encryptTextForRecipients] — decrypts just
+  /// [myUserId]'s own entry, using [senderKey] (this device's pairwise
+  /// key with whoever sent the message — *not* necessarily any key of
+  /// mine, since the sender is the one who chose which key to encrypt
+  /// each entry with). Returns `null`, not a thrown exception, when the
+  /// map simply has no entry for [myUserId] at all — e.g. a message sent
+  /// before this device joined the group, which was never wrapped for
+  /// it in the first place; that's an expected case, distinct from
+  /// [DecryptionFailedException] (an entry that exists but doesn't
+  /// decrypt with the key given).
+  Future<String?> decryptTextForRecipient({
+    required String envelopeMapJson,
+    required String myUserId,
+    required SecretKey senderKey,
+  }) async {
+    final envelope = _ownEnvelope(envelopeMapJson, myUserId);
+    if (envelope == null) return null;
+    return decryptText(senderKey, envelope);
+  }
+
+  /// The media equivalent of [encryptTextForRecipients]: generates a
+  /// fresh one-time key, encrypts [plaintext] (the actual image/video/
+  /// audio bytes) with it exactly once, and separately wraps *that* key
+  /// once per recipient the same way a text body's plaintext is wrapped
+  /// directly. [encryptedBytes] is what gets uploaded as the message's
+  /// media; [wrappedKeysJson] is what rides along as the message's
+  /// `body` (otherwise unused for a media message) so each recipient can
+  /// recover the one-time key and, in turn, the media itself.
+  Future<({Uint8List encryptedBytes, String wrappedKeysJson})>
+  encryptMediaForRecipients(
+    Map<String, SecretKey> recipientKeys,
+    Uint8List plaintext,
+  ) async {
+    final mediaKey = await _cipher.newSecretKey();
+    final encryptedBytes = await encryptBytes(mediaKey, plaintext);
+    final mediaKeyBytes = await mediaKey.extractBytes();
+
+    final wrappedKeys = <String, String>{};
+    for (final entry in recipientKeys.entries) {
+      final wrapped = await encryptBytes(entry.value, mediaKeyBytes);
+      wrappedKeys[entry.key] = base64Encode(wrapped);
+    }
+    return (
+      encryptedBytes: encryptedBytes,
+      wrappedKeysJson: jsonEncode(wrappedKeys),
+    );
+  }
+
+  /// The inverse of [encryptMediaForRecipients]'s key-wrapping half —
+  /// recovers the one-time media key bytes from [myUserId]'s own entry
+  /// in the wrapped-keys map, decrypted with [senderKey]. The caller
+  /// (`chat_media_content.dart`) turns the result into a [SecretKey] via
+  /// `SecretKeyData` and uses *that* — not [senderKey] — to decrypt the
+  /// downloaded media bytes. Same "missing entry is `null`, not an
+  /// exception" contract as [decryptTextForRecipient].
+  Future<Uint8List?> unwrapMediaKeyBytes({
+    required String wrappedKeysJson,
+    required String myUserId,
+    required SecretKey senderKey,
+  }) async {
+    final wrapped = _ownEnvelope(wrappedKeysJson, myUserId);
+    if (wrapped == null) return null;
+    return decryptBytes(senderKey, base64Decode(wrapped));
+  }
+
+  String? _ownEnvelope(String envelopeMapJson, String myUserId) {
+    final map = jsonDecode(envelopeMapJson) as Map<String, dynamic>;
+    return map[myUserId] as String?;
+  }
 }

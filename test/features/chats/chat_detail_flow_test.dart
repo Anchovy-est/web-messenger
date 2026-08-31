@@ -294,8 +294,9 @@ class _FakeMessageRepository extends MessageRepository {
   Future<Message> sendMediaMessage(
     String chatId,
     Uint8List bytes,
-    String type,
-  ) async {
+    String type, {
+    String? body,
+  }) async {
     if (errorOnSendMedia != null) throw errorOnSendMedia!;
     sentMediaBytes.add(bytes);
     _sendMediaCount++;
@@ -306,6 +307,7 @@ class _FakeMessageRepository extends MessageRepository {
       chatId: chatId,
       senderId: _me.id,
       type: type,
+      body: body,
       mediaUrl: url,
       createdAt: DateTime(2026, 1, 1, 12),
       status: MessageStatus.sent,

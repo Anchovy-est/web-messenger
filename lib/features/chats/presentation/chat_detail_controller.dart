@@ -57,8 +57,15 @@ const _typingStopDelay = Duration(seconds: 3);
 /// the server returned (still pointing at ciphertext bytes on disk) —
 /// decrypting a whole image/video eagerly for every message in history
 /// would be wasteful, so that happens lazily, only when a bubble actually
-/// renders one, via [chatKey] (see `_ImageContent`/`_VideoContent` in
-/// chat_detail_screen.dart).
+/// renders one, via [keyForSender] (see `_ImageContent`/`_VideoContent`
+/// in chat_media_content.dart).
+///
+/// A 1:1 chat has one shared key both participants derive independently
+/// (see [_chatKey]); a group has no such single shared secret, so
+/// instead each message is individually wrapped once per recipient (see
+/// [_groupKeys] and `EncryptionService`'s "Group messaging" section) —
+/// everything above still holds either way, just per-sender instead of
+/// chat-wide for a group.
 class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   ChatDetailController(
     this._ref,
@@ -93,14 +100,57 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   Timer? _typingStopTimer;
   bool _iAmTyping = false;
 
-  /// This chat's derived AES-256-GCM key, or `null` if it isn't
-  /// available yet — either this device has no identity keypair of
-  /// its own yet, or the other participant hasn't registered a public key
-  /// (see `EncryptionService.deriveChatKey`). Exposed read-only so
-  /// `ChatDetailScreen` can hand it to the media-rendering widgets, which
-  /// need it to decrypt image/video bytes on demand.
-  SecretKey? get chatKey => _chatKey;
+  /// This chat's derived AES-256-GCM key — only ever set for a 1:1 chat.
+  /// `null` either because this device has no identity keypair of its
+  /// own yet, the other participant hasn't registered a public key (see
+  /// `EncryptionService.deriveChatKey`), or this chat is actually a
+  /// group (see [_groupKeys] instead — a group has no single shared key
+  /// the way a 1:1 chat does).
   SecretKey? _chatKey;
+
+  /// This device's pairwise key with each *other* participant of a
+  /// *group* chat, keyed by their user id — including this device's own
+  /// user id, via a key derived against its own public key. That
+  /// self-entry isn't a mistake: without it, a device could decrypt
+  /// everyone else's group messages but never its own again after a
+  /// reload, since [send]/[_attemptSend] wrap a message once per
+  /// recipient and a device is never its own "recipient" otherwise. See
+  /// `EncryptionService`'s "Group messaging" section for the full
+  /// reasoning. Empty (not used at all) for a 1:1 chat.
+  Map<String, SecretKey> _groupKeys = {};
+
+  bool _isGroup = false;
+
+  /// Whether this chat is a group — exposed so `ChatDetailScreen` (and,
+  /// through it, `chat_media_content.dart`) can tell which of
+  /// [_chatKey]/[_groupKeys] applies without duplicating that logic.
+  bool get isGroup => _isGroup;
+
+  /// Every *other* group participant's display name, by user id — a 1:1
+  /// chat never needs this (there's only ever one other participant,
+  /// already named in the app bar), but a group message bubble from
+  /// someone other than the viewer needs to say *who*, since "not me"
+  /// could be any of several people. Empty for a 1:1 chat.
+  Map<String, String> _participantNames = {};
+  Map<String, String> get participantNames => _participantNames;
+
+  /// The key to use to decrypt something [senderId] encrypted — for a
+  /// 1:1 chat that's just [_chatKey] regardless of who sent it (the key
+  /// is symmetric, shared by both participants); for a group it's
+  /// [senderId]'s own entry in [_groupKeys], since each participant
+  /// wraps a message with a different key per recipient. Exposed so
+  /// `ChatDetailScreen` can hand it to the media-rendering widgets (see
+  /// `chat_media_content.dart`), which need it to decrypt image/video/
+  /// audio bytes on demand, keyed by whichever message they're actually
+  /// rendering rather than one chat-wide value.
+  SecretKey? keyForSender(String? senderId) {
+    if (!_isGroup) return _chatKey;
+    if (senderId == null) return null;
+    return _groupKeys[senderId];
+  }
+
+  bool get _encryptionReady =>
+      _isGroup ? _groupKeys.isNotEmpty : _chatKey != null;
 
   Future<void> _init() async {
     await _prepareEncryption();
@@ -110,19 +160,48 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   Future<void> _prepareEncryption() async {
     try {
       final seed = await _secureStorage.readIdentityPrivateKey();
-      if (seed == null) return; // no local identity yet — chatKey stays null
+      if (seed == null) return; // no local identity yet — keys stay unset
       final myKeyPair = await _encryptionService.keyPairFromSeed(
         base64Decode(seed),
       );
       final chat = await _chatRepository.getChat(_chatId);
-      _chatKey = await _encryptionService.deriveChatKey(
-        myKeyPair: myKeyPair,
-        peerPublicKeyBase64: chat.otherParticipant?.publicKey,
-        chatId: _chatId,
-      );
+      _isGroup = chat.isGroup;
+
+      if (!chat.isGroup) {
+        _chatKey = await _encryptionService.deriveChatKey(
+          myKeyPair: myKeyPair,
+          peerPublicKeyBase64: chat.otherParticipant?.publicKey,
+          chatId: _chatId,
+        );
+        return;
+      }
+
+      final keys = <String, SecretKey>{};
+      final myId = _ref.read(sessionControllerProvider).user?.id;
+      if (myId != null) {
+        final myPublicKey = await _encryptionService.exportPublicKey(myKeyPair);
+        final selfKey = await _encryptionService.deriveChatKey(
+          myKeyPair: myKeyPair,
+          peerPublicKeyBase64: myPublicKey,
+          chatId: _chatId,
+        );
+        if (selfKey != null) keys[myId] = selfKey;
+      }
+      final names = <String, String>{};
+      for (final participant in chat.participants ?? const []) {
+        names[participant.id] = participant.displayName;
+        final key = await _encryptionService.deriveChatKey(
+          myKeyPair: myKeyPair,
+          peerPublicKeyBase64: participant.publicKey,
+          chatId: _chatId,
+        );
+        if (key != null) keys[participant.id] = key;
+      }
+      _groupKeys = keys;
+      _participantNames = names;
     } catch (_) {
-      // Best-effort — see the class doc comment on what a null chatKey
-      // means for callers. A chat that can't derive a key yet still
+      // Best-effort — see the class doc comment on what missing keys
+      // mean for callers. A chat that can't derive its key(s) yet still
       // loads (as undecryptable placeholders); it isn't a hard failure.
     }
   }
@@ -146,18 +225,35 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
 
   /// Decrypts a text message's `body` in place, or leaves a non-text/
   /// already-bodyless message untouched — media messages carry no inline
-  /// body to decrypt (their content lives at `mediaUrl`, decrypted
-  /// lazily at render time instead — see the class doc comment).
+  /// body to decrypt for display (a *group* media message's `body` holds
+  /// a wrapped media key instead, decrypted separately and lazily, only
+  /// when a bubble actually renders it — see chat_media_content.dart).
   Future<Message> _decryptForDisplay(Message message) async {
     if (message.type != 'text' || message.body == null) return message;
-    return message.copyWith(body: await _decryptBody(message.body!));
+    return message.copyWith(
+      body: await _decryptBody(message.body!, message.senderId),
+    );
   }
 
-  Future<String> _decryptBody(String envelope) async {
-    final key = _chatKey;
+  Future<String> _decryptBody(String envelope, String? senderId) async {
+    final key = keyForSender(senderId);
     if (key == null) return undecryptableBodyPlaceholder;
     try {
-      return await _encryptionService.decryptText(key, envelope);
+      if (!_isGroup) {
+        return await _encryptionService.decryptText(key, envelope);
+      }
+      final myId = _ref.read(sessionControllerProvider).user?.id;
+      if (myId == null) return undecryptableBodyPlaceholder;
+      final plaintext = await _encryptionService.decryptTextForRecipient(
+        envelopeMapJson: envelope,
+        myUserId: myId,
+        senderKey: key,
+      );
+      // A `null` result means this device simply has no entry in the
+      // envelope (e.g. a message sent before it joined the group) —
+      // same undecryptable placeholder as an outright decryption
+      // failure, since there's nothing more specific to show either way.
+      return plaintext ?? undecryptableBodyPlaceholder;
     } on DecryptionFailedException {
       return undecryptableBodyPlaceholder;
     } catch (_) {
@@ -224,8 +320,7 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   }
 
   Future<void> _attemptSend(String tempId, String plaintext) async {
-    final key = _chatKey;
-    if (key == null) {
+    if (!_encryptionReady) {
       // Can't encrypt without a key — failing fast (no network call) is
       // more honest than sending something we can't actually protect.
       if (!mounted) return;
@@ -233,7 +328,16 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
       return;
     }
     try {
-      final envelope = await _encryptionService.encryptText(key, plaintext);
+      // A group has no single shared key to encrypt one envelope with —
+      // instead, one envelope per current participant (this device
+      // included; see `_groupKeys`'s doc comment), each recipient
+      // decrypting only their own entry on the way back in.
+      final envelope = _isGroup
+          ? await _encryptionService.encryptTextForRecipients(
+              _groupKeys,
+              plaintext,
+            )
+          : await _encryptionService.encryptText(_chatKey!, plaintext);
       final sent = await _repository.sendMessage(_chatId, envelope);
       if (!mounted) return;
       // The server echoes back the ciphertext body it stored — swap in
@@ -322,21 +426,32 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
     Uint8List plaintextBytes,
     String type,
   ) async {
-    final key = _chatKey;
-    if (key == null) {
+    if (!_encryptionReady) {
       if (!mounted) return;
       _setLocalStatus(tempId, MessageStatus.failed);
       return;
     }
     try {
-      final encryptedBytes = await _encryptionService.encryptBytes(
-        key,
-        plaintextBytes,
-      );
+      final Uint8List encryptedBytes;
+      String? wrappedKey; // group-only — see MessageRepository.sendMediaMessage
+      if (_isGroup) {
+        final result = await _encryptionService.encryptMediaForRecipients(
+          _groupKeys,
+          plaintextBytes,
+        );
+        encryptedBytes = result.encryptedBytes;
+        wrappedKey = result.wrappedKeysJson;
+      } else {
+        encryptedBytes = await _encryptionService.encryptBytes(
+          _chatKey!,
+          plaintextBytes,
+        );
+      }
       final sent = await _repository.sendMediaMessage(
         _chatId,
         encryptedBytes,
         type,
+        body: wrappedKey,
       );
       if (!mounted) return;
       _resolveLocal(tempId, sent);
@@ -359,15 +474,16 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   /// changes) if this chat has no encryption key yet — there's nothing
   /// safe to send in that case.
   Future<void> editMessage(String messageId, String newBody) async {
-    final key = _chatKey;
-    if (key == null) {
+    if (!_encryptionReady) {
       throw const ApiException(
         statusCode: null,
         code: 'ENCRYPTION_NOT_READY',
         message: 'Encryption is not ready yet. Try again in a moment.',
       );
     }
-    final envelope = await _encryptionService.encryptText(key, newBody);
+    final envelope = _isGroup
+        ? await _encryptionService.encryptTextForRecipients(_groupKeys, newBody)
+        : await _encryptionService.encryptText(_chatKey!, newBody);
     final updated = await _repository.editMessage(_chatId, messageId, envelope);
     if (!mounted) return;
     _replaceMessage(updated.copyWith(body: newBody));

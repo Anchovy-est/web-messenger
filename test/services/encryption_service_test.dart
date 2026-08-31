@@ -3,6 +3,8 @@
 // directly. See backend/src/routes/message.routes.test.js for the
 // equivalent proof from the *server's* side (using Node's own crypto
 // primitives, to show the two independent implementations interoperate).
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cryptography/cryptography.dart';
 
@@ -166,6 +168,161 @@ void main() {
         () => service.decryptBytes(key, [1, 2, 3]),
         throwsA(isA<DecryptionFailedException>()),
       );
+    },
+  );
+
+  // --- Group messaging: per-recipient wrapping ----------------------------
+
+  test(
+    'encryptTextForRecipients wraps the same plaintext separately for every recipient, each independently decryptable',
+    () async {
+      final aliceKey = SecretKey(List.generate(32, (i) => i)); // "me"
+      final bobKey = SecretKey(List.generate(32, (i) => i + 1));
+      final carolKey = SecretKey(List.generate(32, (i) => i + 2));
+      const plaintext = 'meeting moved to 5pm';
+
+      final envelopeMap = await service.encryptTextForRecipients({
+        'alice': aliceKey,
+        'bob': bobKey,
+        'carol': carolKey,
+      }, plaintext);
+
+      // Opaque on the wire — the plaintext never appears verbatim.
+      expect(envelopeMap, isNot(contains(plaintext)));
+
+      for (final MapEntry(key: userId, value: key) in {
+        'alice': aliceKey,
+        'bob': bobKey,
+        'carol': carolKey,
+      }.entries) {
+        final decrypted = await service.decryptTextForRecipient(
+          envelopeMapJson: envelopeMap,
+          myUserId: userId,
+          senderKey: key,
+        );
+        expect(decrypted, plaintext);
+      }
+    },
+  );
+
+  test(
+    'decryptTextForRecipient returns null (not an exception) for a user with no entry in the map',
+    () async {
+      final aliceKey = SecretKey(List.generate(32, (i) => i));
+      final envelopeMap = await service.encryptTextForRecipients({
+        'alice': aliceKey,
+      }, 'hello');
+
+      final result = await service.decryptTextForRecipient(
+        envelopeMapJson: envelopeMap,
+        myUserId: 'dave', // never invited, never wrapped for
+        senderKey: aliceKey,
+      );
+
+      expect(result, isNull);
+    },
+  );
+
+  test(
+    'decryptTextForRecipient throws DecryptionFailedException for a present entry that just does not decrypt with the given key',
+    () async {
+      final aliceKey = SecretKey(List.generate(32, (i) => i));
+      final wrongKey = SecretKey(List.generate(32, (i) => 255 - i));
+      final envelopeMap = await service.encryptTextForRecipients({
+        'alice': aliceKey,
+      }, 'hello');
+
+      expect(
+        () => service.decryptTextForRecipient(
+          envelopeMapJson: envelopeMap,
+          myUserId: 'alice',
+          senderKey: wrongKey,
+        ),
+        throwsA(isA<DecryptionFailedException>()),
+      );
+    },
+  );
+
+  test(
+    'encryptMediaForRecipients encrypts the media once and wraps a recoverable one-time key per recipient',
+    () async {
+      final aliceKey = SecretKey(List.generate(32, (i) => i));
+      final bobKey = SecretKey(List.generate(32, (i) => i + 1));
+      final mediaBytes = Uint8List.fromList(
+        List.generate(1000, (i) => i % 256),
+      );
+
+      final result = await service.encryptMediaForRecipients({
+        'alice': aliceKey,
+        'bob': bobKey,
+      }, mediaBytes);
+
+      // The media itself is genuinely encrypted (not just re-shaped).
+      expect(result.encryptedBytes, isNot(equals(mediaBytes)));
+
+      for (final MapEntry(key: userId, value: key) in {
+        'alice': aliceKey,
+        'bob': bobKey,
+      }.entries) {
+        final unwrapped = await service.unwrapMediaKeyBytes(
+          wrappedKeysJson: result.wrappedKeysJson,
+          myUserId: userId,
+          senderKey: key,
+        );
+        expect(unwrapped, isNotNull);
+        final decrypted = await service.decryptBytes(
+          SecretKey(unwrapped!),
+          result.encryptedBytes,
+        );
+        expect(decrypted, mediaBytes);
+      }
+    },
+  );
+
+  test(
+    'unwrapMediaKeyBytes returns null for a user with no entry in the wrapped-keys map',
+    () async {
+      final aliceKey = SecretKey(List.generate(32, (i) => i));
+      final result = await service.encryptMediaForRecipients({
+        'alice': aliceKey,
+      }, Uint8List.fromList([1, 2, 3]));
+
+      final unwrapped = await service.unwrapMediaKeyBytes(
+        wrappedKeysJson: result.wrappedKeysJson,
+        myUserId: 'dave',
+        senderKey: aliceKey,
+      );
+
+      expect(unwrapped, isNull);
+    },
+  );
+
+  test(
+    'a self-derived key (deriveChatKey against my own public key) lets a device decrypt its own wrapped entry',
+    () async {
+      // This is exactly what `ChatDetailController` relies on to let a
+      // device read its own past group messages after a reload — every
+      // recipient map it builds includes an entry for itself, wrapped
+      // with a key derived against its own public key rather than a
+      // peer's.
+      final me = await service.generateIdentityKeyPair();
+      final myPublicKey = await service.exportPublicKey(me);
+      final selfKey = await service.deriveChatKey(
+        myKeyPair: me,
+        peerPublicKeyBase64: myPublicKey,
+        chatId: 'group-1',
+      );
+
+      expect(selfKey, isNotNull);
+      final envelopeMap = await service.encryptTextForRecipients({
+        'me': selfKey!,
+      }, 'note to self');
+      final decrypted = await service.decryptTextForRecipient(
+        envelopeMapJson: envelopeMap,
+        myUserId: 'me',
+        senderKey: selfKey,
+      );
+      expect(decrypted, 'note to self');
     },
   );
 }

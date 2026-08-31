@@ -67,15 +67,25 @@ class MessageRepository {
   /// `sendMediaMessage`). The server independently re-enforces the 20MB
   /// cap (backend/src/middleware/upload.js) regardless of whether
   /// client-side compression already got under it.
+  ///
+  /// [body] is only ever non-null for a *group* chat's media message —
+  /// there's no single shared key to encrypt the media with the way a
+  /// 1:1 chat's `chatKey` does (see
+  /// `EncryptionService.encryptMediaForRecipients`), so [bytes] is
+  /// instead encrypted once with a fresh one-time key, and [body] carries
+  /// that key, wrapped once per recipient. Always null for a 1:1 chat,
+  /// exactly as before this parameter existed.
   Future<Message> sendMediaMessage(
     String chatId,
     Uint8List bytes,
-    String type,
-  ) async {
+    String type, {
+    String? body,
+  }) async {
     try {
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: 'blob.enc'),
         'type': type,
+        'body': ?body,
       });
       final response = await _apiClient.dio.post(
         '/chats/$chatId/messages/media',

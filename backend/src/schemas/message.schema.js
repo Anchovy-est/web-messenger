@@ -51,6 +51,16 @@ const sendMediaTypeSchema = z.object({
   type: z.enum(['image', 'video', 'audio'], {
     message: 'type must be image, video, or audio.',
   }),
+  // Opaque to the server either way (see message.service.js
+  // `sendMediaMessage`'s doc comment) — absent for a 1:1 chat's media
+  // message, exactly as before this field existed. A *group* message
+  // has no single shared chat key to encrypt the media with (see
+  // lib/services/encryption_service.dart's "Group messaging" section),
+  // so the client instead encrypts the media once with a fresh one-time
+  // key and rides that key, wrapped once per recipient, along in this
+  // field — reusing `body`, otherwise unused for a media message,
+  // rather than adding a new column for it.
+  body: z.string().optional(),
 });
 
 module.exports = {

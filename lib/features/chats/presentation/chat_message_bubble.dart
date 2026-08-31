@@ -1,29 +1,31 @@
 part of 'chat_detail_screen.dart';
 
-class _MessageBubble extends StatelessWidget {
+class _MessageBubble extends ConsumerWidget {
   const _MessageBubble({
     required this.message,
     required this.isMine,
-    required this.chatKey,
     this.onRetry,
     this.onLongPress,
   });
 
   final Message message;
   final bool isMine;
-  // This chat's derived end-to-end encryption key, needed to decrypt an
-  // image/video's bytes at render time (text is already
-  // decrypted by the time it reaches `message.body` — see
-  // `ChatDetailController`). Null means encryption isn't ready yet for
-  // this chat (see `ChatDetailController.chatKey`'s doc comment); media
-  // content renders a lock icon instead of crashing in that case.
-  final SecretKey? chatKey;
   final VoidCallback? onRetry;
   final VoidCallback? onLongPress;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final controller = ref.read(
+      chatDetailControllerProvider(message.chatId).notifier,
+    );
+    // A group message from someone else names its sender — with more
+    // than one possible "not me", bubble alignment alone (all a 1:1
+    // chat needs, since there's only ever one other participant,
+    // already named in the app bar) no longer says who sent it.
+    final senderName = (!isMine && controller.isGroup)
+        ? controller.participantNames[message.senderId]
+        : null;
 
     if (message.isDeleted) {
       // Same placeholder regardless of who sent it — both the sender and
@@ -82,6 +84,20 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (senderName != null) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                senderName,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: colors.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+          ],
           _buildBody(
             failed
                 ? colors.onErrorContainer
@@ -166,11 +182,11 @@ class _MessageBubble extends StatelessWidget {
   Widget _buildBody(Color textColor) {
     switch (message.type) {
       case 'image':
-        return _ImageContent(message: message, chatKey: chatKey);
+        return _ImageContent(message: message);
       case 'video':
-        return _VideoContent(message: message, chatKey: chatKey);
+        return _VideoContent(message: message);
       case 'audio':
-        return _AudioContent(message: message, chatKey: chatKey);
+        return _AudioContent(message: message);
       default:
         return Text(message.body ?? '', style: TextStyle(color: textColor));
     }

@@ -412,18 +412,39 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     }
   }
 
+  /// A human label for who's currently typing, or `null` if no one is —
+  /// "typing…" for a 1:1 chat (unchanged from before groups existed,
+  /// since there's only ever one possible "them"), but named for a
+  /// group, where "someone other than me" could be any of several
+  /// people typing at once.
+  String? _typingLabel(Set<String> typingUserIds) {
+    if (typingUserIds.isEmpty) return null;
+    final controller = ref.read(
+      chatDetailControllerProvider(widget.chatId).notifier,
+    );
+    if (!controller.isGroup) return 'typing…';
+    final names =
+        typingUserIds
+            .map((id) => controller.participantNames[id] ?? 'Someone')
+            .toList()
+          ..sort();
+    return switch (names.length) {
+      1 => '${names[0]} is typing…',
+      2 => '${names[0]} and ${names[1]} are typing…',
+      _ => 'Several people are typing…',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(chatDetailControllerProvider(widget.chatId));
     final myId = ref.watch(sessionControllerProvider).user?.id;
-    final otherIsTyping = ref.watch(typingIndicatorProvider(widget.chatId));
-    // Not itself part of `state` (it's derived once, doesn't change per
-    // message) — read directly from the notifier rather than watched, so
-    // media bubbles below always use whatever key is current by the time
-    // they build.
-    final chatKey = ref
+    final isGroup = ref
         .read(chatDetailControllerProvider(widget.chatId).notifier)
-        .chatKey;
+        .isGroup;
+    final typingLabel = _typingLabel(
+      ref.watch(typingIndicatorProvider(widget.chatId)),
+    );
 
     // Autoscroll whenever the list grows — covers both "I just sent one"
     // and "one arrived over the socket".
@@ -445,7 +466,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            UserAvatar(avatarUrl: widget.avatarUrl, radius: 16),
+            UserAvatar(
+              avatarUrl: widget.avatarUrl,
+              radius: 16,
+              placeholderIcon: isGroup ? Icons.groups : Icons.person,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -453,9 +478,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(widget.title ?? 'Chat', overflow: TextOverflow.ellipsis),
-                  if (otherIsTyping)
+                  if (typingLabel != null)
                     Text(
-                      'typing…',
+                      typingLabel,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                       ),
@@ -538,7 +564,6 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     return _MessageBubble(
                       message: message,
                       isMine: isMine,
-                      chatKey: chatKey,
                       onRetry: message.status == MessageStatus.failed
                           ? () {
                               final notifier = ref.read(

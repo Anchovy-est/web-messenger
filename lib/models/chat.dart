@@ -90,6 +90,7 @@ class Chat extends Equatable {
     this.archivedAt,
     this.mutedAt,
     this.otherParticipant,
+    this.participants,
     this.lastMessage,
   });
 
@@ -106,7 +107,22 @@ class Chat extends Equatable {
   /// delivery are all unaffected — a muted chat still updates live if
   /// it's open on screen.
   final DateTime? mutedAt;
+
+  /// Only ever set for a 1:1 chat — `null` for a group (see
+  /// [participants] instead). See backend/src/models/chat.model.js
+  /// `CHAT_SELECT`'s doc comment for why the two are deliberately kept
+  /// separate rather than [participants] becoming "the first of possibly
+  /// several" once a chat can have more than one other member.
   final ChatParticipant? otherParticipant;
+
+  /// Only ever set for a group chat — every *other* participant (not
+  /// including the current user), `null` for a 1:1 chat. Used both to
+  /// render a group's member list and, per-participant `publicKey`, to
+  /// derive this device's pairwise end-to-end encryption key with each
+  /// of them (see `ChatDetailController` — a group has no single shared
+  /// chat key the way a 1:1 chat does).
+  final List<ChatParticipant>? participants;
+
   final LastMessagePreview? lastMessage;
 
   bool get isArchived => archivedAt != null;
@@ -142,6 +158,7 @@ class Chat extends Equatable {
       archivedAt: archivedAt,
       mutedAt: clearMutedAt ? null : (mutedAt ?? this.mutedAt),
       otherParticipant: otherParticipant,
+      participants: participants,
       lastMessage: lastMessage ?? this.lastMessage,
     );
   }
@@ -163,6 +180,9 @@ class Chat extends Equatable {
           : ChatParticipant.fromJson(
               json['otherParticipant'] as Map<String, dynamic>,
             ),
+      participants: (json['participants'] as List<dynamic>?)
+          ?.map((p) => ChatParticipant.fromJson(p as Map<String, dynamic>))
+          .toList(),
       lastMessage: json['lastMessage'] == null
           ? null
           : LastMessagePreview.fromJson(
@@ -180,6 +200,7 @@ class Chat extends Equatable {
     archivedAt,
     mutedAt,
     otherParticipant,
+    participants,
     lastMessage,
   ];
 }

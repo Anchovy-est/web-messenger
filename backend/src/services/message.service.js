@@ -51,7 +51,12 @@ async function sendMessage(userId, chatId, body) {
 // unavoidable trade-off of true end-to-end encryption, not a regression:
 // the server literally cannot inspect content it never has the key to
 // decrypt.
-async function sendMediaMessage(userId, chatId, file, declaredType) {
+// [wrappedKey] rides along in the same `body` column a text message's
+// ciphertext uses — see schemas/message.schema.js `sendMediaTypeSchema`
+// for what it actually holds (a group message's per-recipient-wrapped
+// one-time media key; always absent/null for a 1:1 chat's media,
+// unchanged from before this parameter existed).
+async function sendMediaMessage(userId, chatId, file, declaredType, wrappedKey) {
   await chatService.getChat(userId, chatId);
 
   await fs.mkdir(MEDIA_DIR, { recursive: true });
@@ -63,6 +68,7 @@ async function sendMediaMessage(userId, chatId, file, declaredType) {
     senderId: userId,
     type: declaredType,
     mediaUrl: `/uploads/messages/${filename}`,
+    body: wrappedKey ?? null,
   });
 }
 
