@@ -48,6 +48,18 @@ const env = {
 
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
 
+  // Comma-separated allow-list of origins the browser is allowed to
+  // call this API from (e.g. the deployed web client's URL) — used by
+  // both the REST CORS middleware and the Socket.IO server (app.js,
+  // sockets/index.js). Empty/unset means "reflect any origin", which is
+  // what local dev (docker-compose.yml doesn't set this) and the test
+  // suite need; a real deployment sets this explicitly instead — see
+  // the production guard below.
+  corsOrigins: (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+
   // Path to a Firebase service-account JSON key for push notifications.
   // No test/dev fallback — there's no meaningful fake credential for a
   // real external service, so push just stays disabled until this is
@@ -86,6 +98,17 @@ if (env.isProduction) {
     throw new Error(
       `Refusing to start in production with placeholder secret(s) still set: ${names}. ` +
         'Set real, unique values for these before deploying.'
+    );
+  }
+
+  // An empty CORS_ORIGINS means "reflect any origin" — fine for local
+  // dev, not for a real deployment sitting on the open internet. Same
+  // fail-fast posture as the secrets above: a deployment that forgot to
+  // set this should refuse to start, not silently run wide open.
+  if (env.corsOrigins.length === 0) {
+    throw new Error(
+      'Refusing to start in production without CORS_ORIGINS set — ' +
+        'set it to the deployed web client\'s origin(s), comma-separated.'
     );
   }
 }

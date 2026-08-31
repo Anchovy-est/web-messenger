@@ -1,0 +1,7 @@
+{
+  "buildCommand": "chmod +x ./scripts/vercel-build.sh && ./scripts/vercel-build.sh",
+  "outputDirectory": "build/web",
+  "installCommand": "true",
+  "framework": null,
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

@@ -4,13 +4,22 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 
+const env = require('./config/env');
 const healthRoutes = require('./routes/health.routes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
+
+// Empty CORS_ORIGINS (local dev, tests) reflects any origin — cors()'s
+// own default with no options object, same behavior this replaces.
+// Once set (a real deployment; env.js refuses to start in production
+// without it), only those exact origins are allowed, with credentials
+// enabled since the client sends an Authorization header.
+const corsOptions =
+  env.corsOrigins.length > 0 ? { origin: env.corsOrigins, credentials: true } : undefined;
 
 function createApp() {
   const app = express();
 
-  app.use(cors());
+  app.use(cors(corsOptions));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
