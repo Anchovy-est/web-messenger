@@ -106,3 +106,87 @@ test('POST /auth/logout revokes the refresh token so it can no longer be used', 
   assert.equal(refreshRes.status, 401);
   assert.equal(refreshRes.body.error.code, 'INVALID_REFRESH_TOKEN');
 });
+
+// Mobile and Web are two independent clients logging into the same
+// account — nothing in this API distinguishes them by platform; the
+// independence instead comes from `login` issuing a brand new refresh
+// token every time (see auth.service.js `issueSession`) rather than
+// replacing whatever session already existed, and `logout` revoking only
+// the one token it was handed. This test is the regression guard for
+// that: two logins for the same account must behave as two fully
+// separate sessions, in both directions.
+test('logging in twice for the same account creates two independent sessions — logging out one does not affect the other', async () => {
+  const username = `test_multisession_${runId}`.slice(0, 20);
+  createdUsernames.push(username);
+  const credentials = {
+    username,
+    email: `test_multisession_${runId}@example.com`,
+    password: 'Password123!',
+  };
+  await request(app).post('/auth/register').send(credentials);
+
+  const mobileLogin = await request(app).post('/auth/login').send({
+    email: credentials.email,
+    password: credentials.password,
+  });
+  const webLogin = await request(app).post('/auth/login').send({
+    email: credentials.email,
+    password: credentials.password,
+  });
+  assert.notEqual(
+    mobileLogin.body.refreshToken,
+    webLogin.body.refreshToken,
+    'each login must mint its own refresh token, not share/replace one'
+  );
+
+  // Both sessions independently authenticated before either logs out.
+  const mobileMeBefore = await request(app)
+    .get('/auth/me')
+    .set('Authorization', `Bearer ${mobileLogin.body.accessToken}`);
+  const webMeBefore = await request(app)
+    .get('/auth/me')
+    .set('Authorization', `Bearer ${webLogin.body.accessToken}`);
+  assert.equal(mobileMeBefore.status, 200);
+  assert.equal(webMeBefore.status, 200);
+
+  // Logging out Web must not touch Mobile's session.
+  const webLogoutRes = await request(app)
+    .post('/auth/logout')
+    .send({ refreshToken: webLogin.body.refreshToken });
+  assert.equal(webLogoutRes.status, 204);
+
+  const mobileRefreshAfterWebLogout = await request(app)
+    .post('/auth/refresh')
+    .send({ refreshToken: mobileLogin.body.refreshToken });
+  assert.equal(
+    mobileRefreshAfterWebLogout.status,
+    200,
+    "Mobile's session must survive a Web logout"
+  );
+
+  const webRefreshAfterWebLogout = await request(app)
+    .post('/auth/refresh')
+    .send({ refreshToken: webLogin.body.refreshToken });
+  assert.equal(webRefreshAfterWebLogout.status, 401);
+  assert.equal(webRefreshAfterWebLogout.body.error.code, 'INVALID_REFRESH_TOKEN');
+
+  // And the reverse: logging out Mobile (using its now-rotated refresh
+  // token from the refresh above) must not touch a fresh Web session.
+  const web2Login = await request(app).post('/auth/login').send({
+    email: credentials.email,
+    password: credentials.password,
+  });
+  const mobileLogoutRes = await request(app)
+    .post('/auth/logout')
+    .send({ refreshToken: mobileRefreshAfterWebLogout.body.refreshToken });
+  assert.equal(mobileLogoutRes.status, 204);
+
+  const web2RefreshAfterMobileLogout = await request(app)
+    .post('/auth/refresh')
+    .send({ refreshToken: web2Login.body.refreshToken });
+  assert.equal(
+    web2RefreshAfterMobileLogout.status,
+    200,
+    "Web's session must survive a Mobile logout"
+  );
+});
