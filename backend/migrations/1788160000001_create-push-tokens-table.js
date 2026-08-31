@@ -3,13 +3,10 @@
 exports.shorthands = undefined;
 
 exports.up = (pgm) => {
-  // One row per device, not per user — the same account can be signed in
-  // on more than one device, and each gets its own push token. `token` is
-  // globally unique (not just per-user): if the same device token turns
-  // up under a different account (e.g. someone logs out and a different
-  // person logs in on the same phone), the upsert in
-  // pushToken.model.js `register` reassigns it via ON CONFLICT rather
-  // than leaving two rows racing to own the same device.
+  // One row per device, not per user — an account can be signed in on
+  // several devices. `token` is globally unique, so a token that shows
+  // up under a different account (logging out and back in as someone
+  // else on the same phone) gets reassigned via ON CONFLICT.
   pgm.createTable('push_tokens', {
     id: {
       type: 'uuid',
@@ -23,8 +20,8 @@ exports.up = (pgm) => {
       onDelete: 'CASCADE',
     },
     token: { type: 'text', notNull: true },
-    // Not read anywhere yet, but cheap to record now and genuinely useful
-    // the moment iOS support (a different FCM payload shape) is added.
+    // Not read anywhere yet, but useful once iOS support needs a
+    // different FCM payload shape.
     platform: { type: 'text', notNull: true, default: 'android' },
     created_at: {
       type: 'timestamptz',

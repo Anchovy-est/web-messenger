@@ -4,9 +4,8 @@ import '../../../models/user.dart';
 import '../data/auth_providers.dart';
 import '../data/auth_repository.dart';
 
-/// Holds the state of an in-flight (or just-finished) registration
-/// submission. `AsyncValue<User?>` starts as data(null) — "nothing
-/// submitted yet" — and becomes loading/data/error once [submit] runs.
+/// Holds the state of a registration submission — data(null) means
+/// nothing submitted yet.
 class RegisterController extends StateNotifier<AsyncValue<User?>> {
   RegisterController(this._repository) : super(const AsyncValue.data(null));
 

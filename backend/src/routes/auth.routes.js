@@ -21,12 +21,9 @@ const env = require('../config/env');
 
 const router = Router();
 
-// A real backend test run fires hundreds of auth requests against the
-// same in-process app within seconds — real rate limiting would make the
-// test suite itself the thing getting rate-limited, not what it's meant
-// to test. Skipped only under NODE_ENV=test; the limiters themselves
-// have no such awareness (see middleware/rateLimit.js /
-// rateLimit.test.js for direct coverage of the real limiting behavior).
+// A real test run fires hundreds of auth requests in seconds, which
+// would rate-limit the test suite itself. Skipped only here, under
+// NODE_ENV=test — the limiters themselves have no such awareness.
 const passthrough = (req, res, next) => next();
 const login = env.isTest ? passthrough : loginRateLimiter;
 const otp = env.isTest ? passthrough : otpRateLimiter;

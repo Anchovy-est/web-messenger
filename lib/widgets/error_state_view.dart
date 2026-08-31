@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// "Something went wrong, here's a way to try again" — every screen that
-/// loads data through an [AsyncValue] (chat list, chat detail,
-/// invitations) used to define its own byte-for-byte identical version
-/// of this. One shared widget instead — a future change to how errors
-/// are presented (an icon, a different button style) is one edit, not a
-/// find-and-replace across every screen.
+/// "Something went wrong, here's a way to try again" — shared error
+/// state for every screen that loads data through an [AsyncValue].
 class ErrorStateView extends StatelessWidget {
   const ErrorStateView({
     super.key,

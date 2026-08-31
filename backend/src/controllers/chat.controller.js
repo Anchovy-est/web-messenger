@@ -14,10 +14,8 @@ async function createGroup(req, res) {
     participantIds: req.body.participantIds,
   });
 
-  // Fire-and-forget, one per invitee — same reasoning as every other
-  // push call in this app (invitation.controller.js `send`,
-  // message.controller.js `notifyPush`): a push failure must never turn
-  // an otherwise-successful group creation into a 500 response.
+  // Fire-and-forget, one per invitee — a push failure must never turn
+  // a successful group creation into a 500 response.
   for (const inviteeId of invitedUserIds) {
     pushService
       .notifyNewInvitation({ inviteeId, inviterId: req.userId, groupName: chat.name })

@@ -1,11 +1,8 @@
 const { z } = require('zod');
 
-// Unlike `sendMessageSchema`'s `body` (an opaque end-to-end-encrypted
-// envelope the server never reads), a poll's question and options are
-// ordinary server-readable text — see the migration's doc comment on
-// `polls` for why that's an unavoidable, deliberate trade-off, not an
-// oversight. So these get real content validation, the same as any
-// plaintext field elsewhere in this API (a display name, a bio).
+// Unlike a message's `body`, a poll's question/options are ordinary
+// server-readable text (the server needs to tally votes), so they get
+// real content validation like any other plaintext field.
 const createPollSchema = z.object({
   question: z
     .string()

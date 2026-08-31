@@ -38,12 +38,8 @@ function errorHandler(err, req, res, next) {
     });
   }
 
-  // The database itself is unreachable (down, still starting up, network
-  // partition, or connectionTimeoutMillis in config/db.js was hit) —
-  // distinct from a query that ran and failed, and distinct from a bug in
-  // our own code, so it gets its own code/status: 503 tells the client
-  // this is transient and worth retrying, rather than the generic 500
-  // "something's broken" a client can't reasonably act on.
+  // The database itself is unreachable — 503 tells the client this is
+  // transient and worth retrying, instead of a generic 500.
   if (
     ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND'].includes(err.code) ||
     /connection.*terminated/i.test(err.message || '')
@@ -57,9 +53,8 @@ function errorHandler(err, req, res, next) {
     });
   }
 
-  // multer throws its own error class for upload problems it detects
-  // itself (as opposed to ones we raise via fileFilter, which are already
-  // ApiErrors and handled above) — the size limit being the main one.
+  // multer's own error class for upload problems (as opposed to ones
+  // we raise via fileFilter, already handled above as ApiErrors).
   if (err.name === 'MulterError') {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({

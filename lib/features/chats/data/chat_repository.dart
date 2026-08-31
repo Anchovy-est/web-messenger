@@ -35,9 +35,7 @@ class ChatRepository {
 
   Future<Chat> unarchive(String chatId) => _post(chatId, 'unarchive');
 
-  /// Mutes push notifications for this chat, for the current user only —
-  /// see [Chat.mutedAt]'s doc comment for exactly what this does and
-  /// doesn't affect.
+  /// Mutes push notifications for this chat, for the current user only.
   Future<Chat> mute(String chatId) => _post(chatId, 'mute');
 
   Future<Chat> unmute(String chatId) => _post(chatId, 'unmute');

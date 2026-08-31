@@ -4,12 +4,9 @@ import 'package:equatable/equatable.dart';
 
 import 'poll.dart';
 
-/// A message's delivery lifecycle. `sending` and `failed` are
-/// purely local — a message only ever exists in one of those two states
-/// on-device, before the backend has assigned it a real id, so the server
-/// never sends them. `sent`/`delivered`/`read` come from the backend (see
-/// backend/src/models/message.model.js `toPublicMessage`) and only ever
-/// progress forward in that order.
+/// A message's delivery lifecycle. `sending`/`failed` are local-only,
+/// before the backend assigns a real id. `sent`/`delivered`/`read` come
+/// from the backend and only progress forward.
 enum MessageStatus {
   sending,
   sent,
@@ -21,14 +18,9 @@ enum MessageStatus {
       MessageStatus.values.byName(value);
 }
 
-/// A single message in a chat — `type`/`mediaUrl` support image/video/
-/// audio messages as well as text, matching
-/// backend/migrations/…init-messages-table.js.
-///
-/// A deleted message isn't removed — `deletedAt` gets set and
-/// `body`/`mediaUrl` come back null from the backend, but the message
-/// stays in the list as a tombstone in its original position; see
-/// [isDeleted] and `_MessageBubble` in chat_detail_screen.dart.
+/// A single message in a chat. A deleted message isn't removed —
+/// `deletedAt` is set and `body`/`mediaUrl` come back null, so it stays
+/// in place as a tombstone.
 class Message extends Equatable {
   const Message({
     required this.id,
@@ -56,29 +48,13 @@ class Message extends Equatable {
   final DateTime? deletedAt;
   final MessageStatus status;
 
-  /// This message's poll content — only ever non-null when [type] is
-  /// `'poll'` (and even then, null for a *deleted* poll message, whose
-  /// underlying `polls` row is gone too; see backend/src/services/
-  /// message.service.js `attachPolls`). A poll's actual question/
-  /// options/votes live here, not in [body] — see [Poll]'s class doc
-  /// comment for why that content isn't end-to-end encrypted the way a
-  /// text message's `body` is.
+  /// This message's poll content — only non-null when [type] is
+  /// `'poll'`. Not end-to-end encrypted, unlike [body] — see [Poll].
   final Poll? poll;
 
-  /// The original, plaintext, not-yet-uploaded image/video/audio bytes
-  /// for a still-`sending`/`failed` media message — purely a local,
-  /// in-memory rendering/retry aid, never sent to or received from the
-  /// backend (there's deliberately no JSON field for it, and it's
-  /// excluded from [props]). Once the server confirms the upload, the
-  /// real [Message] it returns has this as `null` and a real [mediaUrl]
-  /// instead — see `ChatDetailController._resolveLocal`.
-  ///
-  /// Exists so a not-yet-uploaded image/video/audio can be shown (and,
-  /// if the upload fails, re-sent) from bytes already in memory rather
-  /// than from a local file path — [mediaUrl] on Web is a `blob:` URL,
-  /// not something `dart:io`/most plugins can read back from at all, so
-  /// bytes-in-hand is what makes this work on every platform instead of
-  /// just mobile.
+  /// Original, plaintext, not-yet-uploaded media bytes for a still-
+  /// `sending`/`failed` message — a local rendering/retry aid, never
+  /// sent to or received from the backend.
   final Uint8List? localBytes;
 
   bool get isDeleted => deletedAt != null;
@@ -105,12 +81,8 @@ class Message extends Equatable {
     );
   }
 
-  /// [body]/[poll] override the stored value when given — used by
-  /// `ChatDetailController` to swap a message's encrypted `body` for its
-  /// decrypted plaintext once `EncryptionService` has resolved it, or a
-  /// poll message's `poll` for a fresher one (a vote cast/changed/
-  /// retracted, or a live tally update), without needing to reconstruct
-  /// the whole [Message].
+  /// [body]/[poll] override the stored value when given — e.g. swapping
+  /// in decrypted plaintext, or a fresher poll tally.
   Message copyWith({MessageStatus? status, String? body, Poll? poll}) {
     return Message(
       id: id,

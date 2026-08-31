@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// "There's nothing here yet" — a centered, muted message, with an
-/// optional icon above it. Used for an empty chat list, no invitations,
-/// no search results, an empty thread, and so on.
-///
-/// Several screens used to each define their own near-identical version
-/// of this (one with an icon, one without, one missing the padding/
-/// center-alignment the others had) — collapsing them into one widget
-/// means every empty state in the app genuinely looks the same, not just
-/// similar.
+/// "There's nothing here yet" — a centered, muted message with an
+/// optional icon. Used for an empty chat list, invitations, search
+/// results, etc.
 class EmptyStateView extends StatelessWidget {
   const EmptyStateView({super.key, required this.text, this.icon});
 

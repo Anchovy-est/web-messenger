@@ -1,7 +1,4 @@
-/// A live "someone is/isn't typing" push — the `typing` socket event,
-/// relayed by the backend straight from one participant's client
-/// to the other's (see backend/src/sockets/index.js) and never persisted
-/// anywhere, unlike a real message.
+/// A live "someone is/isn't typing" push — never persisted.
 class TypingUpdate {
   const TypingUpdate({
     required this.chatId,

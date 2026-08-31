@@ -31,11 +31,8 @@ router.use(authenticate);
 
 router.get('/', validateQuery(listChatsQuerySchema), asyncHandler(chatController.list));
 
-// A literal path, not `/:id` — declared ahead of it regardless, since a
-// route table reads more safely when the more specific pattern comes
-// first, even though Express wouldn't actually confuse the two here
-// (this is POST, `/:id`'s neighbors below are all GET/other POSTs with
-// more path segments).
+// A literal path, declared ahead of /:id anyway since more specific
+// routes reading first is just easier to follow.
 router.post(
   '/groups',
   validateBody(createGroupChatSchema),
@@ -44,10 +41,8 @@ router.post(
 
 router.get('/:id', validateParams(chatIdParamsSchema), asyncHandler(chatController.getOne));
 
-// Invites one more person to an *existing* group chat — the group
-// equivalent of POST /invitations, which only ever starts a brand-new
-// 1:1 chat (see invitation.service.js `inviteToChat`'s doc comment for
-// why the two are deliberately separate).
+// Invites one more person to an existing group chat — the group
+// equivalent of POST /invitations, which only starts a new 1:1 chat.
 router.post(
   '/:id/invitations',
   validateParams(chatIdParamsSchema),
@@ -92,9 +87,8 @@ router.post(
 router.post(
   '/:id/messages/media',
   validateParams(chatIdParamsSchema),
-  // multer must run first — it's what parses the multipart body (both
-  // the file and the accompanying `type` field) in the first place;
-  // validateBody only has something to check once req.body exists.
+  // multer must run first — it parses the multipart body, and
+  // validateBody needs req.body to already exist.
   mediaUpload.single('file'),
   validateBody(sendMediaTypeSchema),
   asyncHandler(messageController.sendMedia)

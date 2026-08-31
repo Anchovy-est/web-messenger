@@ -1,7 +1,6 @@
 // Integration tests for text messaging — persistence, ordering,
 // authorization, and the realtime broadcast, against a real Postgres
-// connection and a real listening HTTP+socket.io server (needed for the
-// socket tests; see auth.routes.test.js for how to run this suite).
+// connection and a real listening HTTP+socket.io server.
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -85,8 +84,8 @@ function deleteMessage(token, chatId, messageId) {
     .set('Authorization', `Bearer ${token}`);
 }
 
-// Real listen (port 0 = OS-assigned), lazily on first use — supertest
-// alone never binds a port, but socket.io-client needs one to connect to.
+// Real listen (port 0 = OS-assigned), lazily on first use — needed
+// since socket.io-client needs a real port to connect to.
 let socketPort;
 
 after(async () => {
@@ -327,7 +326,7 @@ test('marking delivered after already read does not report a downgrade', async (
 
   await markRead(bob.accessToken, chatId);
   const deliveredAfterRead = await markDelivered(bob.accessToken, chatId);
-  // Nothing to announce as "newly delivered" — it's already at (or past) that status.
+  // Nothing new to announce — already at (or past) that status.
   assert.deepEqual(deliveredAfterRead.body.messageIds, []);
 
   const aliceList = await listMessages(alice.accessToken, chatId);
@@ -353,8 +352,8 @@ test("marking delivered/read only affects the other participant's messages, not 
   const chatId = await createAcceptedChat(alice, bob);
   const sendRes = await sendMessage(alice.accessToken, chatId, 'hi');
 
-  // Alice marking "read" on her own chat should not mark her own message
-  // as read-by-herself — there's nothing for her to receive from herself.
+  // Alice reading her own chat shouldn't mark her own message read —
+  // there's nothing for her to receive from herself.
   const selfRead = await markRead(alice.accessToken, chatId);
   assert.deepEqual(selfRead.body.messageIds, []);
 
@@ -528,8 +527,7 @@ test('a sender can delete their own message, and it persists as a tombstone', as
   assert.equal(deleteRes.body.message.body, null);
   assert.ok(deleteRes.body.message.deletedAt);
 
-  // Persisted (sender's own view): a fresh fetch still shows the
-  // tombstone, in its original place, not a gap.
+  // Persisted: a fresh fetch still shows the tombstone in place.
   const aliceList = await listMessages(alice.accessToken, chatId);
   assert.equal(aliceList.body.messages.length, 1);
   assert.equal(aliceList.body.messages[0].id, messageId);
@@ -660,25 +658,18 @@ test('a deletion is pushed live to the receiver as "message:deleted"', async () 
 
 // --- End-to-end encryption ----------------------------------------------
 //
-// This test plays the part of the real Flutter client's crypto exactly
-// (X25519 ECDH -> HKDF-SHA256 -> AES-256-GCM — see
-// lib/services/encryption_service.dart), using Node's built-in `crypto`
-// module instead of Dart's `cryptography` package, to prove the whole
-// design actually works end-to-end: two independently-generated identity
-// keypairs derive the *same* per-chat key without either side ever
-// transmitting it, a message encrypted with that key round-trips
-// correctly through the real API, and what's actually sitting in the
-// database is never the plaintext.
+// Plays the part of the real Flutter client's crypto (X25519 ECDH ->
+// HKDF-SHA256 -> AES-256-GCM) using Node's built-in `crypto`, to prove
+// two independent keypairs derive the same chat key without ever
+// transmitting it, a message round-trips through the real API, and the
+// database never holds plaintext.
 
 function generateIdentityKeyPair() {
   return crypto.generateKeyPairSync('x25519');
 }
 
-// Node's raw JWK export is base64url without padding; the wire format
-// used everywhere else in this app (schemas/user.schema.js, and the
-// Dart client) is standard base64 with padding — converting here once
-// keeps every other layer agnostic to which encoding Node happens to
-// prefer internally.
+// Node's raw JWK export is base64url without padding; the app's own
+// wire format is standard base64 with padding — converted here once.
 function rawPublicKeyBase64(publicKey) {
   const jwk = publicKey.export({ format: 'jwk' });
   return Buffer.from(jwk.x, 'base64url').toString('base64');
@@ -738,9 +729,9 @@ test('a message is genuinely end-to-end encrypted: both participants independent
     .set('Authorization', `Bearer ${bob.accessToken}`)
     .send({ publicKey: bobPublic });
 
-  // Alice fetches the chat exactly the way the real client does, to get
-  // Bob's public key, then derives the chat key from *her own* private
-  // key (never transmitted anywhere) plus that public key.
+  // Alice fetches the chat like the real client would, to get Bob's
+  // public key, then derives the chat key from her own private key
+  // (never transmitted) plus that public key.
   const aliceChatRes = await request(app)
     .get(`/chats/${chatId}`)
     .set('Authorization', `Bearer ${alice.accessToken}`);
@@ -752,9 +743,9 @@ test('a message is genuinely end-to-end encrypted: both participants independent
   assert.equal(sendRes.status, 201);
   assert.notEqual(sendRes.body.message.body, plaintext);
 
-  // Bob independently derives the *same* key from his own private key
-  // plus Alice's public key (ECDH commutativity: A·bG == B·aG) — no key
-  // exchange over the network was needed at all.
+  // Bob independently derives the same key from his own private key
+  // plus Alice's public key (ECDH commutativity) — no network exchange
+  // of the key itself was needed.
   const bobChatRes = await request(app)
     .get(`/chats/${chatId}`)
     .set('Authorization', `Bearer ${bob.accessToken}`);
@@ -766,7 +757,7 @@ test('a message is genuinely end-to-end encrypted: both participants independent
   const received = bobList.body.messages.find((m) => m.id === sendRes.body.message.id);
   assert.equal(decryptEnvelope(bobChatKey, received.body), plaintext);
 
-  // The actual point of this phase: inspect the raw database row.
+  // The actual point of this test: inspect the raw database row.
   const { rows } = await pool.query('SELECT body FROM messages WHERE id = $1', [
     sendRes.body.message.id,
   ]);
@@ -774,10 +765,8 @@ test('a message is genuinely end-to-end encrypted: both participants independent
   assert.notEqual(rows[0].body, plaintext);
   assert.ok(!rows[0].body.includes(plaintext), 'raw body column must not contain the plaintext');
 
-  // A party without the right key gets a loud authentication failure
-  // (AES-GCM), not silently-wrong output — the same protection that
-  // stops a tampered database row from being served up as if it were
-  // valid content.
+  // Without the right key, AES-GCM fails loudly instead of returning
+  // silently-wrong output — the same protection against a tampered row.
   assert.throws(() => decryptEnvelope(crypto.randomBytes(32), rows[0].body));
 });
 

@@ -28,9 +28,8 @@ async function revokeByHash(tokenHash) {
   );
 }
 
-// Used on password reset: every existing session is logged out, since a
-// password change is usually a response to "someone else might have my
-// password" — leaving old sessions alive would defeat the point.
+// Used on password reset: logs out every existing session, since
+// leaving old ones alive would defeat the point of the reset.
 async function revokeAllForUser(userId) {
   await query(
     'UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL',

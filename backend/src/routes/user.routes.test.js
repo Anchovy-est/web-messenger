@@ -146,9 +146,8 @@ test('PUT /users/me stores bio encrypted at rest, not as plaintext', async () =>
   // The API itself still hands the owner back their own plaintext.
   assert.equal(putRes.body.user.bio, plaintext);
 
-  // Inspect the raw database row directly — this is the actual check
-  // that matters: the *stored* value must not be, or contain, the
-  // plaintext, regardless of what any endpoint returns.
+  // The actual check that matters: the stored value must not contain
+  // the plaintext, regardless of what any endpoint returns.
   const { rows } = await pool.query('SELECT bio FROM users WHERE username = $1', [username]);
   assert.equal(rows.length, 1);
   const storedBio = rows[0].bio;
@@ -159,8 +158,7 @@ test('PUT /users/me stores bio encrypted at rest, not as plaintext', async () =>
     'raw bio column must not contain the plaintext substring'
   );
   // Shape-check it's a real AES-256-GCM envelope: base64 of
-  // nonce(12 bytes) + ciphertext + authTag(16 bytes) — see
-  // src/utils/fieldCrypto.js.
+  // nonce(12) + ciphertext + authTag(16).
   const raw = Buffer.from(storedBio, 'base64');
   assert.ok(raw.length >= 12 + 16);
 
@@ -237,9 +235,8 @@ test('re-registering the same token under a different account reassigns it', asy
     .set('Authorization', `Bearer ${alice.accessToken}`)
     .send({ token: 'shared-device-token' });
 
-  // Same device, different account logs in (e.g. logout + a different
-  // person logs in on the same phone) — the token should now belong to
-  // bob, not still point at alice.
+  // Same device, different account logs in — the token should now
+  // belong to bob, not still point at alice.
   await request(app)
     .put('/users/me/push-token')
     .set('Authorization', `Bearer ${bob.accessToken}`)

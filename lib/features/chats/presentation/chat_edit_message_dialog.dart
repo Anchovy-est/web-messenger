@@ -1,10 +1,7 @@
 part of 'chat_detail_screen.dart';
 
 /// A modal dialog to edit one of my own messages. Not optimistic: stays
-/// open with an inline error on failure (e.g. the
-/// backend rejects it — see `ChatDetailController.editMessage`) instead
-/// of silently reverting like a failed *send* does, since here there's no
-/// separate per-message status indicator to fall back to showing it.
+/// open with an inline error on failure.
 class _EditMessageDialog extends ConsumerStatefulWidget {
   const _EditMessageDialog({required this.chatId, required this.message});
 
@@ -44,11 +41,8 @@ class _EditMessageDialogState extends ConsumerState<_EditMessageDialog> {
           .editMessage(widget.message.id, text);
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      // Deliberately not just `on ApiException` — anything unforeseen
-      // (a crypto library hiccup encrypting the edit, say) must still
-      // land here and reset `_saving`, or this dialog is stuck showing
-      // a spinner on a permanently disabled Save button for the rest of
-      // its life, with no way out but dismissing it and losing the edit.
+      // Broad catch — anything unforeseen must still reset `_saving`,
+      // or this dialog is stuck on a disabled Save button forever.
       if (!mounted) return;
       setState(() {
         _saving = false;

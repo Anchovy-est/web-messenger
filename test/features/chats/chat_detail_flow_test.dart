@@ -28,19 +28,14 @@ import 'package:mobile_messenger/services/socket_service.dart';
 
 import '../../support/fake_secure_storage_service.dart';
 
-// --- End-to-end encryption test scaffolding --------------------------------
+// --- End-to-end encryption test scaffolding ---------------------------
 //
-// `ChatDetailController` now requires a real, derivable chat key to send
-// or decrypt anything (see its class doc comment) — these tests exercise
-// the real `EncryptionService` (not a fake/no-op), with a fixed identity
-// keypair for "me" (matching `FakeSecureStorageService`'s default, so
-// `_pumpChatDetail` needs no extra wiring for it) and a freshly-generated
-// one standing in for "bob", wired in via [_FakeChatRepository] so
-// `ChatDetailController._prepareEncryption` can derive the same chat key
-// a real client would. `_encryptedBody` pre-encrypts every literal
-// plaintext string used as fixture/pushed-message content below, so
-// `_message()` and friends stay simple call sites rather than every test
-// awaiting its own encryption step.
+// `ChatDetailController` needs a real, derivable chat key to send or
+// decrypt anything, so these tests exercise the real `EncryptionService`
+// with a fixed identity keypair for "me" and a freshly-generated one for
+// "bob". `_encryptedBody` pre-encrypts every fixture/pushed-message
+// string, so `_message()` and friends stay simple synchronous call
+// sites.
 final _crypto = EncryptionService();
 late final SimpleKeyPair _aliceKeyPair;
 late final String _bobPublicKey;
@@ -49,14 +44,9 @@ final _encryptedBody = <String, String>{};
 
 const _chatId = 'chat1';
 
-/// A genuinely-decodable minimal 1x1 PNG (matches the fixture pattern
-/// used on the backend — see backend/src/routes/user.avatar.test.js).
-/// `Image.memory` actually runs its bytes through the platform's real
-/// image codec, so arbitrary placeholder bytes (fine for the *encryption*
-/// round-trip, which doesn't care what the bytes mean) throw "Invalid
-/// image data" partway through rendering and fail the test — using a
-/// real image avoids that without weakening what's actually under test
-/// here (the decrypt pipeline, not image-format validity).
+/// A genuinely-decodable minimal 1x1 PNG. `Image.memory` runs its bytes
+/// through the platform's real image codec, so arbitrary placeholder
+/// bytes would throw "Invalid image data" and fail the test.
 const _validPngBytes = [
   137,
   80,
@@ -159,8 +149,7 @@ Future<void> _prepareCrypto() async {
 }
 
 /// Stands in for `ChatRepository` — `ChatDetailController` fetches the
-/// chat once, at startup, purely to read the other participant's public
-/// key (see `_prepareEncryption`).
+/// chat once at startup, just to read the other participant's public key.
 class _FakeChatRepository extends ChatRepository {
   _FakeChatRepository(this._peerPublicKey, {this.mutedAt}) : super(ApiClient());
 
@@ -240,8 +229,8 @@ class _FakeMessageRepository extends MessageRepository {
 
   final List<Message> initialMessages;
   final ApiException? errorOnList;
-  // Mutable — a test can send/edit/delete once with an error set, then
-  // clear it and retry, without needing a second repository instance.
+  // Mutable — a test can fail once, clear it, and retry without a
+  // second repository instance.
   ApiException? errorOnSend;
   ApiException? errorOnEdit;
   ApiException? errorOnDelete;
@@ -249,12 +238,9 @@ class _FakeMessageRepository extends MessageRepository {
   final Duration sendDelay;
   final List<String> sentBodies = [];
   final List<Uint8List> sentMediaBytes = [];
-  // Keyed by the `mediaUrl` a sent/pushed message points at — stands in
-  // for the backend's `uploads/messages/` disk storage, so `downloadMedia`
-  // has something to serve back (still-encrypted, exactly like the real
-  // static file route would). Tests exercising a *received* media message
-  // populate this directly before pushing it; a *sent* one is populated
-  // automatically by `sendMediaMessage` below.
+  // Keyed by mediaUrl — stands in for the backend's disk storage, so
+  // `downloadMedia` has still-encrypted bytes to serve back. A received
+  // message populates this directly; a sent one via `sendMediaMessage`.
   final Map<String, Uint8List> mediaStore = {};
   final List<String> markedDeliveredChatIds = [];
   final List<String> markedReadChatIds = [];
@@ -380,9 +366,8 @@ class _FakeMessageRepository extends MessageRepository {
 }
 
 /// Lets a test push `message:new`/`message:status` events straight into
-/// `ChatDetailController`'s subscriptions, standing in for a real socket
-/// push from the backend (that round trip is covered by
-/// backend/src/routes/message.routes.test.js).
+/// `ChatDetailController`'s subscriptions, standing in for a real
+/// socket push from the backend.
 class _ControllableSocketService extends SocketService {
   final _messageController = StreamController<Message>.broadcast();
   final _statusController = StreamController<MessageStatusUpdate>.broadcast();
@@ -426,11 +411,9 @@ class _ControllableSocketService extends SocketService {
   void pushDeleted(Message message) => _deletedController.add(message);
 }
 
-/// [body] is looked up in [_encryptedBody] (pre-populated by
-/// [_prepareCrypto]) so every call site here stays a plain, synchronous
-/// literal — `ChatDetailController` decrypts real ciphertext, so a
-/// fixture/pushed message needs to actually carry some, not the raw
-/// plaintext a pre-Phase-20 test could get away with.
+/// [body] is looked up in [_encryptedBody] so every call site stays a
+/// plain, synchronous literal — `ChatDetailController` decrypts real
+/// ciphertext, so a fixture/pushed message needs to actually carry some.
 Message _message({
   required String id,
   required String senderId,
@@ -560,9 +543,8 @@ void main() {
       await tester.tap(find.byIcon(Icons.send));
       await tester.pumpAndSettle();
 
-      // What actually reached the "server" is ciphertext — the real
-      // proof it's genuinely encrypted, not just re-displayed
-      // plaintext, is that it decrypts back to the original.
+      // What reached the "server" is ciphertext — proven genuine by
+      // decrypting it back to the original.
       expect(repository.sentBodies, hasLength(1));
       expect(repository.sentBodies.single, isNot('Hello Bob, this is Alice'));
       expect(
@@ -637,8 +619,7 @@ void main() {
     expect(find.text('Only once, please'), findsOneWidget);
 
     // The backend broadcasts every persisted message to the whole room,
-    // sender included (see backend/src/controllers/message.controller.js)
-    // — the client is expected to de-dupe by id.
+    // sender included — the client is expected to de-dupe by id.
     socketService.pushIncoming(
       _message(id: 'sent-1', senderId: _me.id, body: 'Only once, please'),
     );
@@ -676,9 +657,8 @@ void main() {
       await tester.tap(find.text('This will fail'));
       await tester.pumpAndSettle();
 
-      // The first attempt threw before ever reaching `sentBodies` — only
-      // the retry lands here (same reasoning as the media version of
-      // this test below).
+      // The first attempt threw before reaching `sentBodies` — only the
+      // retry lands here.
       expect(repository.sentBodies, hasLength(1));
       expect(
         await _crypto.decryptText(_chatKey, repository.sentBodies.single),
@@ -879,8 +859,8 @@ void main() {
       expect(socketService.emittedTyping.length, 1);
       expect(socketService.emittedTyping.single.isTyping, true);
 
-      // Still typing — already-typing state isn't re-announced on every
-      // keystroke, only the pause timer resets.
+      // Still typing — already-typing state isn't re-announced on
+      // every keystroke, only the pause timer resets.
       await tester.enterText(find.byType(TextField), 'he');
       await tester.pump();
       expect(socketService.emittedTyping.length, 1);
@@ -1366,14 +1346,12 @@ void main() {
     expect(find.text('This message was deleted'), findsNothing);
   });
 
-  // --- Image & video messages ----------------------------------------------
+  // --- Image & video messages -------------------------------------------
   //
-  // Same bypass as avatar_upload_flow_test.dart: image_picker and the
-  // native compression plugins aren't mockable via Riverpod overrides, so
-  // these tests skip straight past `_pickAttachment` and drive
-  // `ChatDetailController.sendImage`/`sendVideo`/`retryMedia` directly,
-  // with an already-"compressed" local path standing in for whatever the
-  // real picker+compression flow would have produced.
+  // Same bypass as avatar_upload_flow_test.dart: image_picker and native
+  // compression plugins aren't mockable via Riverpod overrides, so these
+  // tests skip past `_pickAttachment` and drive
+  // `ChatDetailController.sendImage`/`sendVideo`/`retryMedia` directly.
 
   testWidgets(
     'sending an image (User A -> User B) resolves to the decrypted uploaded image',
@@ -1394,8 +1372,8 @@ void main() {
       await tester
           .pumpAndSettle(); // let the fetch+decrypt FutureBuilder resolve
 
-      // What was actually uploaded is ciphertext — decrypting it back
-      // with the real chat key recovers the exact original bytes.
+      // What was uploaded is ciphertext — decrypting it back with the
+      // real chat key recovers the exact original bytes.
       expect(repository.sentMediaBytes, hasLength(1));
       expect(
         await _crypto.decryptBytes(_chatKey, repository.sentMediaBytes.single),
@@ -1448,10 +1426,9 @@ void main() {
 
       final element = tester.element(find.byType(Scaffold).first);
       final container = ProviderScope.containerOf(element);
-      // Same `AudioRecorderService`-bypass reasoning as image/video above:
-      // `record` isn't mockable via Riverpod overrides either, so this
-      // drives `ChatDetailController.sendAudio` directly with bytes
-      // standing in for whatever a real recording would have produced.
+      // Same bypass reasoning as image/video above — `record` isn't
+      // mockable via Riverpod overrides, so this drives
+      // `ChatDetailController.sendAudio` directly.
       await container
           .read(chatDetailControllerProvider('chat1').notifier)
           .sendAudio(Uint8List.fromList([4, 8, 15, 16, 23, 42]));
@@ -1498,10 +1475,8 @@ void main() {
           .value!
           .single
           .id;
-      // No path/bytes to pass here — `retryMedia` re-sends the bytes
-      // already sitting on the failed message's own `localBytes` (see
-      // `Message.localBytes`'s doc comment), same ones as the original
-      // attempt above.
+      // No path/bytes to pass — `retryMedia` re-sends the bytes already
+      // on the failed message's own `localBytes`.
       await container
           .read(chatDetailControllerProvider('chat1').notifier)
           .retryMedia(failedId);
@@ -1549,11 +1524,9 @@ void main() {
 
       repository.errorOnSendMedia = null; // the network's back
       // Retries via the controller directly rather than tapping the
-      // bubble — the tap → onRetry wiring itself is already covered
-      // generically by the analogous text-message retry test above
-      // (both types share the same `onRetry` plumbing in
-      // chat_detail_screen.dart); what matters here is specifically
-      // "does retry resend the same bytes".
+      // bubble — the tap-to-retry wiring is already covered by the
+      // text-message retry test above; what matters here is whether
+      // retry resends the same bytes.
       final failedId = container
           .read(chatDetailControllerProvider('chat1'))
           .value!
@@ -1564,8 +1537,8 @@ void main() {
           .retryMedia(failedId);
       await tester.pumpAndSettle();
 
-      // The first attempt threw before ever reaching `sentMediaBytes` (see
-      // the fake's `sendMediaMessage` above) — only the retry lands here.
+      // The first attempt threw before reaching `sentMediaBytes` — only
+      // the retry lands here.
       expect(repository.sentMediaBytes, hasLength(1));
       expect(
         await _crypto.decryptBytes(_chatKey, repository.sentMediaBytes.single),
@@ -1641,10 +1614,8 @@ void main() {
 
       expect(find.text('No messages yet. Say hello!'), findsNothing);
       // No plugin backs video_player in a widget test, so the player
-      // itself never finishes initializing (and this message's mediaUrl
-      // isn't in `mediaStore` either, so decryption never even gets that
-      // far) — what matters here is that the message landed in the
-      // thread and rendering it didn't crash.
+      // never finishes initializing — what matters here is that the
+      // message landed in the thread and rendering it didn't crash.
     },
   );
 
@@ -1655,11 +1626,9 @@ void main() {
       final repository = _FakeMessageRepository();
       const url = '/uploads/messages/bob-voice.m4a';
       // Unlike video, audio's fetch+decrypt path needs no platform
-      // channel at all — `audioplayers` only touches one once playback
-      // actually *starts*, not to load a `BytesSource`. Pre-populating
-      // this means the assertion below genuinely proves the received
-      // ciphertext was downloaded and decrypted, not just that
-      // rendering the row didn't crash.
+      // channel — `audioplayers` only touches one once playback starts.
+      // So the assertion below genuinely proves the ciphertext was
+      // downloaded and decrypted, not just that rendering didn't crash.
       repository.mediaStore[url] = await _crypto.encryptBytes(_chatKey, [
         4,
         8,

@@ -3,11 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../models/message.dart';
 import 'chat_detail_controller.dart';
 
-/// Search *within* one already-open chat's thread — text messages the
-/// device has already decrypted (see the class doc comment on
-/// [MessageSearchController] for why this can only ever be client-side).
-/// Distinct from `SearchController`/`SearchScreen`, which searches for
-/// *people* to invite, not message content.
+/// Search within one already-open chat's thread. Distinct from
+/// `SearchController`, which searches for people to invite, not
+/// message content.
 class MessageSearchState {
   const MessageSearchState({
     this.query = '',
@@ -22,9 +20,8 @@ class MessageSearchState {
   /// itself renders in.
   final List<String> matches;
 
-  /// Index into [matches] the user last navigated to (via
-  /// [MessageSearchController.next]/[previous], or landed on when a new
-  /// search started) — `-1` means no query, or a query with no matches.
+  /// Index into [matches] the user last navigated to — `-1` means no
+  /// query, or no matches.
   final int selectedIndex;
 
   bool get isActive => query.isNotEmpty;
@@ -36,23 +33,11 @@ class MessageSearchState {
       : null;
 }
 
-/// Finds text messages in one chat's already-decrypted thread that
-/// contain the current search query — and *only* that. This has to be
-/// entirely client-side: message bodies are end-to-end encrypted (see
-/// `EncryptionService`), so the server never has plaintext to search in
-/// the first place, and building any kind of server-side search index
-/// would mean either storing a plaintext (or plaintext-derived, e.g.
-/// stemmed/tokenized) index the server could read — defeating the whole
-/// point of end-to-end encryption — or a much more involved searchable-
-/// encryption scheme that's real cryptography research, not a
-/// reasonable scope for this feature. Searching the plaintext this
-/// device already holds in memory, having already decrypted it to
-/// display the thread in the first place, costs nothing extra and
-/// leaks nothing new.
-///
-/// One instance per chat (keyed by chatId via `.family`), watching
-/// [chatDetailControllerProvider] so a new message arriving mid-search
-/// (or a message being edited/deleted) re-filters automatically.
+/// Finds text messages in one chat's already-decrypted thread matching
+/// the search query. Entirely client-side — message bodies are
+/// end-to-end encrypted, so the server never has plaintext to index or
+/// search. Watches the chat's own message list, so new/edited/deleted
+/// messages re-filter automatically.
 class MessageSearchController extends StateNotifier<MessageSearchState> {
   MessageSearchController(this._ref, this._chatId)
     : super(const MessageSearchState()) {
@@ -87,11 +72,8 @@ class MessageSearchController extends StateNotifier<MessageSearchState> {
           message.id,
     ];
 
-    // A message arriving/changing mid-search shouldn't yank the view
-    // away from whatever match the user was already looking at, as long
-    // as it's still a match; otherwise land on the most recent one —
-    // the messages nearest the bottom of the thread, which is what's
-    // already on screen most of the time.
+    // Keep the current match selected if it's still a match; otherwise
+    // land on the most recent one.
     final previousId = state.selectedMessageId;
     final newIndex = (previousId != null && matches.contains(previousId))
         ? matches.indexOf(previousId)

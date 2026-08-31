@@ -1,25 +1,12 @@
 part of 'chat_detail_screen.dart';
 
-/// A still-`sending`/`failed` message's [Message.localBytes] is the
-/// local, never-encrypted, not-yet-uploaded image/video/audio bytes
-/// (nothing's been uploaded yet, or the upload didn't make it) —
-/// rendered directly. Every other status means the server has an
-/// end-to-end-encrypted copy: [_fetchAndDecrypt] decrypts it after
-/// downloading, using whichever key applies to *this* message specifically
-/// (see `ChatDetailController.keyForSender` — a 1:1 chat's single shared
-/// key regardless of sender, or a group's per-sender pairwise key). No
-/// key available yet for this message's sender is shown as a lock icon
-/// rather than attempting (and failing) to decrypt.
+/// A still-sending/failed message's [Message.localBytes] renders
+/// directly. Otherwise [_fetchAndDecrypt] downloads and decrypts the
+/// server copy. No key yet for the sender shows a lock icon instead of
+/// attempting to decrypt.
 ///
-/// Stateful (not a plain build-method fetch) so the fetch+decrypt only
-/// ever runs *once*, in [initState] — starting a fresh
-/// `Future`/`FutureBuilder` on every rebuild (which a `ConsumerWidget`
-/// would do, since `build()` re-runs on any ancestor state change, e.g.
-/// every optimistic-send status transition elsewhere in the thread) both
-/// re-fetches needlessly and, combined with the loading state's
-/// indeterminate spinner scheduling its own continuous animation frames,
-/// can make `pumpAndSettle()` in a widget test never observe a settled
-/// frame at all.
+/// Stateful so the fetch only runs once, in [initState] — a plain
+/// build-method fetch would restart on every rebuild.
 class _ImageContent extends ConsumerStatefulWidget {
   const _ImageContent({required this.message});
 
@@ -40,11 +27,8 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
     _startFetch();
   }
 
-  // Split out from `initState` so a failed download/decrypt (a network
-  // blip, most commonly — see `_fetchAndDecrypt`) has somewhere to
-  // return to on retry, rather than leaving a permanently broken icon
-  // as the only thing this bubble will ever show again for the rest of
-  // this session.
+  // Split out from `initState` so a failed download has somewhere to
+  // return to on retry.
   void _startFetch() {
     final message = widget.message;
     final isLocal =
@@ -87,10 +71,7 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
               return const LoadingView();
             }
             if (!snapshot.hasData) {
-              // Most commonly a network failure downloading the
-              // (still-encrypted) bytes — tapping retries the fetch
-              // rather than leaving this permanently broken for the
-              // rest of the session.
+              // Usually a network failure — tapping retries the fetch.
               return InkWell(
                 onTap: _retry,
                 child: const Center(
@@ -122,14 +103,9 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
   }
 }
 
-/// Downloads and decrypts a *remote* (already-uploaded) image/video/
-/// audio message's bytes. For a 1:1 chat, that's one decrypt with the
-/// chat's shared key. A group has no such single shared key — instead,
-/// [message.body] carries this device's own wrapped copy of the
-/// one-time key the media was actually encrypted with (see
-/// `EncryptionService.encryptMediaForRecipients`); that's unwrapped
-/// first, using the pairwise key shared with whoever sent it, and *that*
-/// (not the sender key itself) is what decrypts the downloaded bytes.
+/// Downloads and decrypts a remote media message's bytes. For a 1:1
+/// chat that's one decrypt with the shared key; a group first unwraps
+/// its own copy of the one-time media key, then decrypts with that.
 Future<Uint8List> _fetchAndDecrypt(WidgetRef ref, Message message) async {
   final controller = ref.read(
     chatDetailControllerProvider(message.chatId).notifier,
@@ -167,16 +143,10 @@ Future<Uint8List> _fetchAndDecrypt(WidgetRef ref, Message message) async {
   );
 }
 
-/// Same local-vs-network-and-encrypted split as [_ImageContent], but a
-/// video needs an actual [VideoPlayerController] (asynchronously
-/// initialized, and disposed with the widget) rather than a one-shot
-/// image load, so this is stateful where that one isn't. Either way, the
-/// bytes in hand (local: [Message.localBytes]; remote: decrypted after
-/// downloading) go through [PlatformVideoBytesSource] to become a
-/// controller — [VideoPlayerController] has no "play these bytes
-/// directly" mode, only asset/file/network/content-URI sources, and
-/// which of those is actually reachable differs by platform (see
-/// lib/core/media/video_bytes_source.dart).
+/// Same local-vs-remote split as [_ImageContent], but a video needs a
+/// [VideoPlayerController]. The bytes (local or decrypted) go through
+/// [PlatformVideoBytesSource] to build one, since the player has no
+/// "play these bytes directly" mode.
 class _VideoContent extends ConsumerStatefulWidget {
   const _VideoContent({required this.message});
 
@@ -253,18 +223,12 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
   @override
   void dispose() {
     unawaited(_controller?.dispose());
-    // The decrypted plaintext temp resource (if any — see
-    // `_initialize`/`PlatformVideoBytesSource`) shouldn't linger
-    // indefinitely once this bubble is gone; best-effort, same as every
-    // other cleanup in this app.
+    // Best-effort cleanup of the decrypted temp resource, if any.
     unawaited(_source?.cleanup());
     super.dispose();
   }
 
-  // Most failures here (the download itself, or writing/reading the
-  // temp file `PlatformVideoBytesSource` needs — see `_initialize`) are
-  // transient, so retrying is genuinely worth offering rather than
-  // leaving this bubble permanently broken for the rest of the session.
+  // Most failures here are transient, so retry is worth offering.
   void _retry() {
     setState(() => _failed = false);
     _initialize();
@@ -329,13 +293,9 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
   }
 }
 
-/// Same local-vs-network-and-encrypted split as [_ImageContent]/
-/// [_VideoContent], but audio plays directly from bytes ([AudioPlayer]
-/// has a real "play these bytes" source, unlike [VideoPlayerController]
-/// — see [BytesSource] — so there's no temp file to write or clean up
-/// for a received recording). Nothing is decoded/loaded until the user
-/// actually taps play, so opening a thread full of voice messages
-/// doesn't eagerly download and decrypt every one of them.
+/// Same split as [_ImageContent]/[_VideoContent], but audio plays
+/// directly from bytes — no temp file needed. Nothing loads until the
+/// user taps play.
 class _AudioContent extends ConsumerStatefulWidget {
   const _AudioContent({required this.message});
 
@@ -440,9 +400,7 @@ class _AudioContentState extends ConsumerState<_AudioContent> {
     return '$minutes:$seconds';
   }
 
-  // Same reasoning as `_ImageContent`/`_VideoContent`'s own retry —
-  // most commonly a network failure downloading the recording, not
-  // something permanent, so this shouldn't be a dead end.
+  // Same reasoning as the other media widgets' own retry.
   void _retry() {
     setState(() => _sourceFailed = false);
     _prepareSource();

@@ -1,16 +1,12 @@
-// Sends push notifications for new messages and chat invitations via
-// Firebase Cloud Messaging. Every call in this file is fire-and-forget
-// from its caller's point of view (see message.controller.js /
-// invitation.controller.js) — a push failure is a degraded notification
-// experience, never a reason to fail the request that triggered it.
+// Sends push notifications for new messages and invitations via
+// Firebase Cloud Messaging. Every call here is fire-and-forget — a
+// push failure is a degraded notification, never a reason to fail the
+// request that triggered it.
 //
-// Deliberately generic notification text for messages: `body`/`mediaUrl`
-// are end-to-end encrypted (see docs/ENCRYPTION.md) and the server
-// genuinely cannot read them, so "what does this message say" is not
-// something a push notification here can ever show — the same
-// constraint real E2EE messengers (Signal) operate under. `type`
-// (text/image/video/audio) is plaintext metadata, not content, so it's
-// fine to tailor the notification text to it.
+// Message notification text is deliberately generic: `body`/`mediaUrl`
+// are end-to-end encrypted and the server can't read them, so it can't
+// say what a message contains — only its `type` (text/image/etc.),
+// which is plaintext metadata.
 const path = require('path');
 const env = require('../config/env');
 const chatModel = require('../models/chat.model');
@@ -28,15 +24,10 @@ const MESSAGE_PREVIEW_BY_TYPE = {
 let messaging = null;
 let initAttempted = false;
 
-// Lazily initialized (and only once) so `firebase-admin` — a fairly
-// heavy dependency — is never even required, and no attempt is made to
-// read credentials, in an environment that hasn't set up a Firebase
-// project (every test run, and any dev environment before it's
-// configured — see docs/PUSH_NOTIFICATIONS.md). Push notifications are
-// the one feature in this app designed to degrade to "silently does
-// nothing" rather than error when unconfigured, since unlike the JWT or
-// encryption secrets, there's no way to fake a working substitute for
-// real Firebase credentials in a test environment.
+// Lazy, one-time init so firebase-admin is never required and no
+// credentials are read in an environment without Firebase configured
+// (every test run, most dev setups). Push is the one feature meant to
+// silently do nothing when unconfigured, rather than error.
 function getMessaging() {
   if (initAttempted) return messaging;
   initAttempted = true;
@@ -57,7 +48,7 @@ function getMessaging() {
 }
 
 // Test-only hook: lets push.service.test.js reset the lazy-init guard
-// between tests without needing a second process.
+// between tests without a second process.
 function _resetForTests() {
   messaging = null;
   initAttempted = false;
@@ -85,8 +76,7 @@ async function sendToTokens(tokens, { title, body, data }) {
     )
   );
 
-  // Dead tokens (uninstalled app, expired registration) are cheap to
-  // clean up now rather than retried forever on every future message.
+  // Clean up dead tokens now instead of retrying them forever.
   await Promise.all(
     results.map((result, i) => {
       if (result.status === 'rejected' && isUnregisteredTokenError(result.reason)) {
@@ -97,14 +87,11 @@ async function sendToTokens(tokens, { title, body, data }) {
   );
 }
 
-// The decision logic — who should be notified about a new message, and
-// whether they've muted this chat — kept separate from the actual FCM
-// call above so it's fully testable against a real database without
-// needing real Firebase credentials (see push.service.test.js). Every
-// *other* participant is a candidate — one for a 1:1 chat, however many
-// for a group — each independently filtered by their own mute state,
-// since one participant muting a group must never affect what anyone
-// else in it receives.
+// Kept separate from the FCM call above so it's testable against a
+// real database without real Firebase credentials. Every other
+// participant is a candidate, filtered independently by their own
+// mute state — one person muting a group chat shouldn't affect
+// anyone else's notifications.
 async function recipientTokensForMessage(chatId, senderId) {
   const recipientIds = await chatModel.getOtherParticipantIds(chatId, senderId);
   const tokensPerRecipient = await Promise.all(
@@ -128,10 +115,8 @@ async function notifyNewMessage({ chatId, senderId, type }) {
   });
 }
 
-// [groupName] is only ever passed for a group invitation (see
-// invitation.controller.js) — its presence, not a separate `isGroup`
-// flag, is what picks the notification text below, since there's
-// nothing else to branch on that a caller could get out of sync.
+// `groupName` is only passed for a group invitation — its presence is
+// what picks the notification text below.
 async function notifyNewInvitation({ inviteeId, inviterId, groupName }) {
   const tokens = await pushTokenModel.listForUser(inviteeId);
   if (tokens.length === 0) return;

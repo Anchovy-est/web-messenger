@@ -5,16 +5,9 @@ import 'package:dio/dio.dart';
 import '../config/env.dart';
 import 'secure_storage_service.dart';
 
-/// The one [Dio] instance the whole app shares. Wraps base URL + JSON
-/// headers + auth-token attachment in one place so feature repositories
-/// only ever describe *what* request to make, not how to authenticate it.
-///
-/// Also transparently handles access-token expiry: on a 401 (from any
-/// endpoint except the auth endpoints themselves), it uses the stored
-/// refresh token to get a new access token and retries the original
-/// request once. If refreshing fails, [onSessionExpired] is invoked so
-/// the app can drop the user back to the login screen — see
-/// `SessionController` for the other end of that callback.
+/// The one [Dio] instance the app shares — base URL, auth headers, and
+/// transparent token refresh on a 401 (retries the request once; on
+/// failure calls [onSessionExpired]).
 class ApiClient {
   ApiClient({SecureStorageService? secureStorage})
     : _secureStorage = secureStorage ?? SecureStorageService(),
@@ -27,9 +20,7 @@ class ApiClient {
           headers: {'Content-Type': 'application/json'},
         ),
       ),
-      // Separate instance with no interceptors, used only for the
-      // refresh call itself — reusing `dio` here would re-enter this
-      // same onError handler on a failed refresh.
+      // No interceptors — avoids re-entering onError on a failed refresh.
       _refreshDio = Dio(BaseOptions(baseUrl: Env.apiBaseUrl)) {
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -74,15 +65,11 @@ class ApiClient {
   final Dio _refreshDio;
   final SecureStorageService _secureStorage;
 
-  /// Called when the refresh token is missing/invalid/expired and the
-  /// session can no longer be renewed. Set by the provider that wires
-  /// this client to `SessionController`.
+  /// Called when the refresh token is missing/invalid and the session
+  /// can't be renewed. Wired to `SessionController`.
   void Function()? onSessionExpired;
 
-  // Concurrent 401s must not each try to refresh independently — the
-  // refresh token is single-use (rotated server-side), so a second
-  // concurrent attempt would fail after the first one succeeds. This
-  // lets every caller await the same in-flight refresh instead.
+  // Lets concurrent 401s share one in-flight refresh instead of racing.
   Completer<bool>? _refreshCompleter;
 
   Future<bool> _refreshAccessToken() {

@@ -10,10 +10,8 @@ const chatIdParamsSchema = z.object({
   id: z.string().uuid('Invalid chat id.'),
 });
 
-// 49 + the creator themselves = a 50-person cap, a sane upper bound for
-// a group chat with no real product requirement pointing at a specific
-// number — big enough for any realistic use of this feature, small
-// enough that one request can't be used to spam invitations at scale.
+// 49 + the creator = a 50-person cap — big enough for real use, small
+// enough that one request can't spam invitations at scale.
 const createGroupChatSchema = z.object({
   name: z
     .string()

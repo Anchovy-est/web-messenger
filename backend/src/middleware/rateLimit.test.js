@@ -1,9 +1,7 @@
-// Unit-level coverage for the rate-limiting mechanism itself, isolated
-// from auth.routes.js's `NODE_ENV=test` skip (see that file) — this
-// constructs `createRateLimiter` directly against a throwaway app, so it
-// genuinely exercises the same middleware real requests would hit in
-// dev/production, regardless of what environment this test itself runs
-// under.
+// Unit-level coverage for the rate limiter itself, isolated from
+// auth.routes.js's NODE_ENV=test skip — constructs createRateLimiter
+// directly against a throwaway app, so it exercises the same
+// middleware real requests would hit in dev/production.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');

@@ -1,9 +1,7 @@
 // Integration tests for group chat polls — creation, permission checks,
-// voting/changing/retracting a vote, anonymous-vs-public identity
-// exposure, and realtime delivery. Same harness as sockets/typing.test.js
-// (a real listening HTTP+socket.io server), since a couple of these tests
-// need to observe a live `poll:updated`/`message:new` push, not just the
-// REST response.
+// voting/changing/retracting, anonymous-vs-public identity exposure,
+// and realtime delivery. Runs a real HTTP+socket.io server since some
+// tests need to observe a live push, not just the REST response.
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -56,9 +54,8 @@ function accept(token, invitationId) {
     .set('Authorization', `Bearer ${token}`);
 }
 
-// Registers three users and gets a fully-formed 3-person group (creator +
-// two accepted invitees) — same shape as chat.groups.test.js's own
-// helper of the same purpose.
+// Registers three users into a fully-formed group (creator + two
+// accepted invitees).
 async function createThreePersonGroup(label) {
   const creator = await registerAndLogin(`${label}c`);
   const memberB = await registerAndLogin(`${label}b`);
@@ -272,7 +269,7 @@ test('casting a vote is reflected in the tally and as "my vote" for that voter',
   assert.equal(yesOption.voteCount, 1);
   assert.equal(voteRes.body.poll.totalVotes, 1);
 
-  // Someone who hasn't voted yet sees the same tally, but no vote of
+  // Someone who hasn't voted sees the same tally, but no vote of
   // their own.
   const creatorView = await getPoll(creator.accessToken, chatId, pollId);
   assert.equal(creatorView.body.poll.myVoteOptionId, null);
@@ -401,16 +398,15 @@ test('an anonymous poll never exposes who voted for what, even to the creator or
 
   // The tally is still visible...
   assert.equal(memberCVoteRes.body.poll.options.find((o) => o.id === yesId).voteCount, 2);
-  // ...but nobody's individual identity is, for any viewer, including
-  // the poll's own creator and a participant who voted themselves.
+  // ...but nobody's individual identity is, for any viewer.
   for (const viewer of [creator, memberB, memberC]) {
     const view = await getPoll(viewer.accessToken, chatId, pollId);
     for (const option of view.body.poll.options) {
       assert.equal(Object.prototype.hasOwnProperty.call(option, 'voters'), false);
     }
   }
-  // Each voter can still see their own vote back — that's not exposing
-  // it to anyone else, just confirming their own choice.
+  // Each voter still sees their own vote back — not a leak, just
+  // confirming their own choice.
   assert.equal(memberCVoteRes.body.poll.myVoteOptionId, yesId);
 });
 
@@ -454,8 +450,8 @@ test('casting a vote broadcasts the updated tally in real time, without leaking 
     assert.equal(payload.chatId, chatId);
     assert.equal(payload.poll.id, pollId);
     assert.equal(payload.poll.options.find((o) => o.id === remoteId).voteCount, 1);
-    // The broadcast is never personalized to any one recipient — this
-    // field simply must not be present, for anyone receiving it.
+    // The broadcast is never personalized — this field must be absent
+    // for every recipient.
     assert.equal(Object.prototype.hasOwnProperty.call(payload.poll, 'myVoteOptionId'), false);
   } finally {
     memberCSocket.close();

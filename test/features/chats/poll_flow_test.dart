@@ -1,9 +1,7 @@
-// Coverage for Phase 10's group chat polls: creating one from the attach
-// sheet, casting/changing/retracting a vote, and the anonymous-vs-public
-// difference in what the UI shows about who voted. `_FakePollRepository`
-// stands in for the backend, tracking one vote per user per poll exactly
-// the way poll.model.js's (poll_id, user_id) primary key does — see its
-// own doc comment.
+// Coverage for group chat polls: creating one, voting, changing a vote,
+// retracting it, and the anonymous-vs-public voter display.
+// `_FakePollRepository` stands in for the backend, tracking one vote per
+// user per poll the same way poll.model.js's primary key does.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -104,10 +102,9 @@ class _NoopSocketService extends SocketService {
 }
 
 /// In-memory stand-in for the backend's poll storage — one vote per
-/// (poll, user), exactly mirroring `poll_votes`'s primary key
-/// (backend/migrations/…create-polls-tables.js), which is what makes
-/// "vote", "change vote", and "retract" the same handful of operations
-/// here that they are server-side.
+/// (poll, user), mirroring `poll_votes`'s primary key, which is what
+/// makes "vote", "change vote", and "retract" the same operations here
+/// that they are server-side.
 class _FakePollRepository extends PollRepository {
   _FakePollRepository() : super(ApiClient());
 

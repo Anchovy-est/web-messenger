@@ -87,9 +87,8 @@ function listMessages(token, chatId) {
     .set('Authorization', `Bearer ${token}`);
 }
 
-// Registers three users and gets a fully-formed 3-person group (creator
-// + two accepted invitees) — the common starting point most tests below
-// build on.
+// Registers three users into a fully-formed group (creator + two
+// accepted invitees) — the starting point most tests below build on.
 async function createThreePersonGroup(label) {
   const creator = await registerAndLogin(`${label}c`);
   const memberB = await registerAndLogin(`${label}b`);
@@ -146,9 +145,9 @@ test('creating a group chat names it, adds the creator, and invites every select
     carolReceived.body.invitations.some((i) => i.chatId === res.body.chat.id),
     true
   );
-  // The invitation carries the group's own name/isGroup — this is what
-  // lets a client show "Alice invited you to Weekend Trip" instead of a
-  // generic "wants to chat" for a group invitation.
+  // The invitation carries the group's name/isGroup — what lets a
+  // client show "Alice invited you to Weekend Trip" instead of a
+  // generic "wants to chat".
   const bobInvitation = bobReceived.body.invitations.find(
     (i) => i.chatId === res.body.chat.id
   );
@@ -319,14 +318,14 @@ test('a group message is only "delivered" once every other member has it, not ju
   const messageId = sendRes.body.message.id;
   assert.equal(sendRes.body.message.status, 'sent');
 
-  // Only member B acks delivery — with three participants, the message
-  // must NOT yet read as "delivered" for the group as a whole.
+  // Only member B acks delivery — with three participants, the
+  // message must not yet read as "delivered" for the group.
   await markDelivered(memberB.accessToken, chatId);
   const afterOne = await listMessages(creator.accessToken, chatId);
   const afterOneMsg = afterOne.body.messages.find((m) => m.id === messageId);
   assert.equal(afterOneMsg.status, 'sent');
 
-  // Once member C also acks, every other participant has it — now it's
+  // Once member C also acks, every participant has it — now it's
   // "delivered".
   await markDelivered(memberC.accessToken, chatId);
   const afterBoth = await listMessages(creator.accessToken, chatId);
@@ -344,9 +343,8 @@ test('a group message is only "read" once every other member has read it', async
   const afterOne = await listMessages(creator.accessToken, chatId);
   assert.equal(
     afterOne.body.messages.find((m) => m.id === messageId).status,
-    // B has read it, but C hasn't even acked delivery yet — the message
-    // isn't genuinely "delivered" (let alone "read") for the group as a
-    // whole until every member has it, so this still reads "sent".
+    // B has read it, but C hasn't even acked delivery — not genuinely
+    // "delivered" for the group until every member has it, so "sent".
     'sent'
   );
 

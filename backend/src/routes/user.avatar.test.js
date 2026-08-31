@@ -17,10 +17,9 @@ const createdUsernames = [];
 const uploadedAvatarPaths = [];
 const UPLOADS_ROOT = path.join(__dirname, '../..');
 
-// Every test that gets back a 200 with an avatarUrl should record it here
-// so `after` can delete exactly the files this run created — the actual
-// filename includes a server-generated timestamp, not anything the test
-// controls, so there's no pattern to glob for after the fact.
+// Records every avatarUrl a test gets back, so `after` can delete
+// exactly the files this run created (the filename is server-generated,
+// so there's no pattern to glob for otherwise).
 function trackAvatarUrl(res) {
   if (res.body?.user?.avatarUrl) {
     uploadedAvatarPaths.push(path.join(UPLOADS_ROOT, res.body.user.avatarUrl));
@@ -178,8 +177,8 @@ test('replacing an avatar deletes the previous file from disk and serves the new
   const staticRes = await request(app).get(second.body.user.avatarUrl);
   assert.equal(staticRes.status, 200);
 
-  // Persisted, not just returned in the response — a fresh GET /users/me
-  // (the same path session-restore uses) reflects it too.
+  // Persisted, not just returned in the response — a fresh GET
+  // /users/me reflects it too.
   const meRes = await request(app)
     .get('/users/me')
     .set('Authorization', `Bearer ${accessToken}`);

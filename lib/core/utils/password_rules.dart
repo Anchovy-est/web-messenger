@@ -1,10 +1,5 @@
-/// A single password-strength rule this app enforces — used both for the
-/// live, as-you-type checklist shown under a password field
-/// ([PasswordRules.all] + a widget that renders each rule's current
-/// pass/fail state) and for the on-submit [PasswordRules.validate].
-/// Mirrors the backend's own check (backend/src/schemas/auth.schema.js)
-/// rule-for-rule, so nothing a client-side check accepts can still be
-/// rejected server-side for a rule the user was never shown.
+/// One password rule — used both by the live checklist and by
+/// [PasswordRules.validate]. Mirrors the backend's own check.
 class PasswordRule {
   const PasswordRule({
     required this.label,
@@ -12,18 +7,16 @@ class PasswordRule {
     required this.isSatisfied,
   });
 
-  /// Short label for the live checklist, e.g. "At least 8 characters".
+  /// Short label for the checklist, e.g. "At least 8 characters".
   final String label;
 
-  /// Full sentence for the on-submit form validator, e.g. "Password must
-  /// be at least 8 characters."
+  /// Full sentence for the form validator.
   final String errorMessage;
 
   final bool Function(String value) isSatisfied;
 }
 
-/// The five rules a password must satisfy to register or reset a
-/// password — see the class doc comment on [PasswordRule].
+/// The rules a password must satisfy to register or reset a password.
 class PasswordRules {
   PasswordRules._();
 
@@ -55,10 +48,7 @@ class PasswordRules {
     ),
   ];
 
-  /// A `TextFormField` validator: the first unmet rule's message, or
-  /// null once every rule is satisfied. Pair with
-  /// `PasswordStrengthChecklist` (see `lib/widgets/password_strength_checklist.dart`)
-  /// for live feedback while typing, rather than only at submit time.
+  /// A form-field validator: the first unmet rule's message, or null.
   static String? validate(String? value) {
     final v = value ?? '';
     if (v.isEmpty) return 'Password is required.';

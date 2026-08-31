@@ -1,9 +1,7 @@
 import 'message.dart';
 
-/// A live "these messages are now at least this far along" push from the
-/// backend (`message:status` socket event — see
-/// backend/src/controllers/message.controller.js `emitStatus`), sent to a
-/// chat's room whenever the recipient marks something delivered or read.
+/// A live "these messages reached at least this status" push from the
+/// backend (`message:status` socket event).
 class MessageStatusUpdate {
   const MessageStatusUpdate({
     required this.chatId,

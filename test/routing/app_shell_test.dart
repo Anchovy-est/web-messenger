@@ -75,9 +75,9 @@ class _FakeChatRepository extends ChatRepository {
       chatId == _chatCarol.id ? _chatCarol : _chatBob;
 }
 
-/// Enough of [MessageRepository] for `ChatDetailScreen` to mount cleanly
-/// — its own content is covered by chat_detail_flow_test.dart; this test
-/// is only about which panes the desktop shell shows alongside it.
+/// Enough of [MessageRepository] for `ChatDetailScreen` to mount
+/// cleanly — its own content is covered by chat_detail_flow_test.dart;
+/// this test is only about which panes the shell shows alongside it.
 class _FakeMessageRepository extends MessageRepository {
   _FakeMessageRepository() : super(ApiClient());
 
@@ -130,8 +130,8 @@ void main() {
       await _pumpDesktopApp(tester);
 
       expect(find.byType(NavigationRail), findsOneWidget);
-      // The mobile `ChatListScreen`'s own app bar title never renders —
-      // the desktop shell replaces that chrome with the sidebar + panes.
+      // The mobile app bar title never renders — the desktop shell
+      // replaces that chrome with the sidebar + panes.
       expect(find.text('Mobile Messenger'), findsNothing);
       // The chat list pane itself is still there, sidebar or not.
       expect(find.text('bob'), findsOneWidget);
@@ -156,8 +156,8 @@ void main() {
 
       // The detail pane opened...
       expect(find.text('No messages yet. Say hello!'), findsOneWidget);
-      // ...without the list pane (still showing "bob"'s tile) disappearing
-      // the way a mobile push navigation would replace it.
+      // ...without the list pane disappearing the way a mobile push
+      // navigation would replace it.
       expect(find.text('bob'), findsWidgets);
       expect(find.text('Select a chat to start messaging'), findsNothing);
     },
@@ -179,7 +179,7 @@ void main() {
     expect(find.text('bob'), findsOneWidget);
   });
 
-  // --- Phase 11: multiple simultaneous chat panels --------------------
+  // --- Multiple simultaneous chat panels -------------------------------
 
   testWidgets(
     'opening a second chat keeps the first one open alongside it, not '
@@ -193,8 +193,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Two open panels — each app bar's mute button is unique to
-      // `ChatDetailScreen`, so its count is exactly "how many panels are
-      // open" regardless of what else is on screen.
+      // `ChatDetailScreen`, so its count is exactly "panels open".
       expect(find.byIcon(Icons.notifications_none), findsNWidgets(2));
       // The chat list pane is still visible alongside both.
       expect(find.text('Select a chat to start messaging'), findsNothing);
@@ -239,8 +238,7 @@ void main() {
     // carol's panel is the one still standing.
     expect(find.text('carol'), findsNWidgets(2));
     // The chat list itself is unaffected by closing a panel — bob is
-    // still a selectable tile, just with no open panel of his own any
-    // more.
+    // still a selectable tile, just with no open panel of his own.
     expect(find.text('bob'), findsOneWidget);
   });
 
@@ -268,9 +266,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('carol'));
       await tester.pumpAndSettle();
-      // Both panels are open now, so "bob" matches twice (the list tile
-      // and bob's own panel's app bar title) — `.first` is the list
-      // tile, since the list pane is built before the panels.
+      // Both panels are open, so "bob" matches twice (list tile and
+      // panel title) — `.first` is the list tile, built before panels.
       await tester.tap(find.text('bob').first);
       await tester.pumpAndSettle();
 
@@ -280,7 +277,7 @@ void main() {
     },
   );
 
-  // --- Phase 12: connection status is visible on every desktop route --
+  // --- Connection status is visible on every desktop route ------------
 
   testWidgets(
     'a dropped realtime connection is visible on the Profile screen too, '

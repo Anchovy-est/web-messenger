@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 
-/// One person who voted for a [PollOption] — only ever present on a
-/// non-anonymous poll's options; see [PollOption.voters].
+/// One person who voted for a [PollOption] — only present on a
+/// non-anonymous poll.
 class PollVoter extends Equatable {
   const PollVoter({
     required this.id,
@@ -28,8 +28,7 @@ class PollVoter extends Equatable {
   List<Object?> get props => [id, username, displayName, avatarUrl];
 }
 
-/// One choice in a [Poll], with its live vote count — see
-/// backend/src/models/poll.model.js `toPublicPoll`.
+/// One choice in a [Poll], with its live vote count.
 class PollOption extends Equatable {
   const PollOption({
     required this.id,
@@ -44,11 +43,8 @@ class PollOption extends Equatable {
   final int position;
   final int voteCount;
 
-  /// Who voted for this option — `null` (the key is absent from the
-  /// server's JSON entirely, not just an empty list) for an anonymous
-  /// poll's options. Never trust a non-null value here as "everyone who
-  /// voted" unless [Poll.isAnonymous] is false — see that field's doc
-  /// comment.
+  /// Who voted for this option — `null` (key absent, not just empty)
+  /// for an anonymous poll.
   final List<PollVoter>? voters;
 
   factory PollOption.fromJson(Map<String, dynamic> json) {
@@ -67,19 +63,10 @@ class PollOption extends Equatable {
   List<Object?> get props => [id, text, position, voteCount, voters];
 }
 
-/// A poll message's actual content. Rides along embedded in its own
-/// [Message] (`Message.poll`, only ever non-null for a `type: 'poll'`
-/// message) rather than being a separate thing the client fetches on the
-/// side — see backend/src/services/message.service.js `attachPolls`.
-///
-/// Unlike a text message's `body`, a poll's `question`/options are *not*
-/// end-to-end encrypted — the server has to actively read them to
-/// enforce one-vote-per-user, tally results, and push live updates,
-/// which real E2EE makes impossible. See the migration that created
-/// `polls` (backend/migrations/…create-polls-tables.js) for the full
-/// reasoning. What *is* still protected is who's allowed to see a poll
-/// at all (ordinary chat-membership checks, same as every message) and,
-/// for an anonymous poll, who voted for what.
+/// A poll message's content. Embedded in its own [Message] rather than
+/// fetched separately. Unlike a text message's `body`, a poll's
+/// question/options aren't end-to-end encrypted — the server needs to
+/// read them to tally votes and enforce one-vote-per-user.
 class Poll extends Equatable {
   const Poll({
     required this.id,
@@ -100,23 +87,16 @@ class Poll extends Equatable {
   final String? creatorId;
   final String question;
 
-  /// Fixed at creation. `false` (public): every option lists who voted
-  /// for it — see [PollOption.voters]. `true` (anonymous): the server
-  /// never sends voter identity for this poll to anyone but each voter
-  /// themselves, about their own vote (see [myVoteOptionId]) — not just
-  /// "the UI doesn't show it", the data itself never crosses the wire.
+  /// Fixed at creation. Anonymous polls never reveal voter identity to
+  /// anyone but the voter themselves (see [myVoteOptionId]).
   final bool isAnonymous;
   final DateTime createdAt;
   final int totalVotes;
   final List<PollOption> options;
 
-  /// The current device's own user's vote, or `null` if they haven't
-  /// voted (or retracted). Only ever populated from a REST response
-  /// (poll creation, fetch, vote, retract) — a realtime `poll:updated`
-  /// broadcast deliberately never carries this field at all, since it's
-  /// shared identically with everyone in the chat and this is inherently
-  /// per-viewer; see `ChatDetailController._onPollUpdated` and
-  /// backend/src/controllers/poll.controller.js `forBroadcast`.
+  /// This device's own vote, or null. Only ever set from a REST
+  /// response — a realtime broadcast never carries it, since it's
+  /// per-viewer.
   final String? myVoteOptionId;
 
   factory Poll.fromJson(Map<String, dynamic> json) {
@@ -136,13 +116,8 @@ class Poll extends Equatable {
     );
   }
 
-  /// Applies a realtime tally update (question/options/vote counts —
-  /// never [myVoteOptionId], which a broadcast never carries; see that
-  /// field's doc comment) on top of this poll's own, already-known,
-  /// current vote. Used by `ChatDetailController._onPollUpdated` so a
-  /// `poll:updated` push updates everyone's view of the *tally* without
-  /// ever touching what this specific device already knows about its own
-  /// vote.
+  /// Applies a realtime tally update on top of this poll's own,
+  /// already-known vote — never overwritten by a broadcast.
   Poll withBroadcastTally(Poll broadcast) {
     return Poll(
       id: broadcast.id,

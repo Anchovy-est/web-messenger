@@ -18,9 +18,9 @@ async function getProfile(userId) {
 }
 
 async function updateProfile(userId, { username, bio }) {
-  // Only re-check uniqueness if the username is actually changing —
-  // otherwise a user re-saving their own unchanged username would find
-  // "themselves" already taken.
+  // Only re-checks uniqueness if the username is actually changing,
+  // so re-saving your own unchanged username doesn't find "itself"
+  // already taken.
   const existing = await userModel.findByUsername(username);
   if (existing && existing.id !== userId) {
     throw new ApiError(409, 'USERNAME_TAKEN', 'Username is already taken.');
@@ -34,9 +34,8 @@ async function updateProfile(userId, { username, bio }) {
 }
 
 async function updateAvatar(userId, file) {
-  // The authoritative check — see utils/imageType.js for why this isn't
-  // just trusting file.mimetype (already filtered once in upload.js, but
-  // that only looked at the client-declared header).
+  // The authoritative check — upload.js already filtered on the
+  // client-declared header, but this looks at the real bytes.
   const detectedType = detectImageType(file.buffer);
   if (!detectedType) {
     throw new ApiError(
@@ -60,9 +59,8 @@ async function updateAvatar(userId, file) {
   const relativeUrl = `/uploads/avatars/${filename}`;
   const updated = await userModel.updateAvatarUrl(userId, relativeUrl);
 
-  // Best-effort cleanup of the file this one replaces. Only touches
-  // files under our own avatars/ path — if avatar_url ever points
-  // somewhere else (e.g. a future external-URL feature), leave it alone.
+  // Best-effort cleanup of the file this replaces. Only touches files
+  // under our own avatars/ path.
   const previousUrl = previousUser.avatar_url;
   if (previousUrl && previousUrl.startsWith('/uploads/avatars/')) {
     const previousPath = path.join(UPLOADS_ROOT, previousUrl.replace('/uploads/', ''));
@@ -77,12 +75,10 @@ async function searchUsers(currentUserId, searchTerm) {
   return rows.map(userModel.toPublicUser);
 }
 
-// Registers this user's end-to-end encryption public key. Called by the
-// client once per device the first time it has no locally
-// stored private key yet (see lib/services/encryption_service.dart) —
-// there's no uniqueness or format validation beyond the schema-level
-// shape check (see schemas/user.schema.js), since a public key isn't a
-// credential the server needs to protect, just data other clients read.
+// Registers this user's end-to-end encryption public key. Called once
+// per device, the first time it has no stored private key yet. No
+// uniqueness check needed — a public key isn't a credential to
+// protect, just data other clients read.
 async function updatePublicKey(userId, publicKey) {
   const updated = await userModel.updatePublicKey(userId, publicKey);
   if (!updated) {
@@ -91,20 +87,16 @@ async function updatePublicKey(userId, publicKey) {
   return userModel.toPublicUser(updated);
 }
 
-// Registers (or re-registers) this device's push token — called once at
-// login/session-restore and again whenever Firebase rotates the token
-// (see lib/services/push_notification_service.dart). No existence check
-// against `users` needed here: `req.userId` already came from a verified
-// JWT (see middleware/authenticate.js), and the table's own foreign key
-// would reject a dangling reference regardless.
+// Registers (or re-registers) this device's push token — called at
+// login/session-restore and whenever Firebase rotates the token. No
+// existence check needed: `req.userId` came from a verified JWT.
 async function registerPushToken(userId, token, platform) {
   await pushTokenModel.register(userId, token, platform);
 }
 
-// Called by the client's own logout flow (see
-// SessionController.logout) so a signed-out device stops receiving
-// this user's pushes immediately, rather than until the token happens
-// to expire or get replaced by a future login.
+// Called on logout so a signed-out device stops receiving this
+// user's pushes immediately, instead of waiting for the token to
+// expire or be replaced.
 async function unregisterPushToken(userId, token) {
   await pushTokenModel.unregister(userId, token);
 }

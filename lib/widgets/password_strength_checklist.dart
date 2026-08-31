@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../core/utils/password_rules.dart';
 
-/// Live, as-you-type visual feedback for each password strength rule
-/// (see [PasswordRules]) — a check icon in the theme's success-ish color
-/// once a rule is met, an outline circle while it isn't. Deliberately
-/// neutral rather than error-red for an unmet rule: nothing is *wrong*
-/// yet, the user just isn't done typing.
+/// Live, as-you-type checklist for each password rule — a check icon
+/// once met, an outline circle while not. Neutral, not error-red: the
+/// user just isn't done typing yet.
 class PasswordStrengthChecklist extends StatelessWidget {
   const PasswordStrengthChecklist({super.key, required this.password});
 

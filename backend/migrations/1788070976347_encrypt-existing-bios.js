@@ -1,17 +1,11 @@
 /* eslint-disable camelcase */
 
-// A one-time data migration, not a schema change — `users.bio` used to
-// be plain text; from this point on user.model.js always writes/reads
-// it through utils/fieldCrypto.js's
-// AES-256-GCM envelope. Without this pass, any bio set before today
-// would keep sitting in the database as plaintext forever (the app code
-// only encrypts on the *next* write), which directly defeats the point.
-// This re-encrypts every existing non-null bio in place, using the exact
-// same algorithm/key-derivation as utils/fieldCrypto.js — duplicated
-// inline (rather than `require`d from src/) so this migration doesn't
-// depend on how the app's own module resolution or dotenv loading
-// happens to behave under node-pg-migrate's runner; migrations should be
-// self-contained.
+// A one-time data migration, not a schema change — bios written before
+// this point are still plaintext, since the app only encrypts on the
+// next write. This re-encrypts every existing bio in place, using the
+// same algorithm as utils/fieldCrypto.js, duplicated inline so the
+// migration stays self-contained and doesn't depend on the app's own
+// module resolution.
 const crypto = require('crypto');
 
 const ALGORITHM = 'aes-256-gcm';
@@ -29,11 +23,9 @@ function encryptField(key, plaintext) {
   return Buffer.concat([nonce, ciphertext, authTag]).toString('base64');
 }
 
-// A value already produced by encryptField() base64-decodes to at least
-// nonce+tag (28) bytes; anything shorter than that couldn't possibly be
-// one of our envelopes, so it's treated as plaintext needing migration.
-// This makes the migration safe to run more than once (e.g. a retried
-// deploy) without double-encrypting already-migrated rows.
+// An already-encrypted value base64-decodes to at least 28 bytes
+// (nonce+tag); anything shorter is plaintext still needing migration.
+// Makes this safe to run more than once without double-encrypting.
 function looksEncrypted(value) {
   try {
     return Buffer.from(value, 'base64').length >= NONCE_BYTES + 16;
@@ -65,9 +57,7 @@ exports.up = async (pgm) => {
   }
 };
 
-// Deliberately irreversible: decrypting back to plaintext on a rollback
-// would mean writing sensitive data back out in the clear, which is
-// exactly what this feature exists to prevent. Rolling back the
-// *encryption feature* means reverting the application code; the data
-// migration itself doesn't un-migrate.
+// Irreversible on purpose: decrypting back to plaintext on rollback
+// would defeat the point of encrypting it. Rolling back the feature
+// itself means reverting the application code, not un-migrating data.
 exports.down = false;

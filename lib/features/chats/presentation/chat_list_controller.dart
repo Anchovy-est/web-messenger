@@ -11,17 +11,10 @@ import '../../../services/secure_storage_service.dart';
 import '../data/chat_providers.dart';
 import '../data/chat_repository.dart';
 
-/// Decrypts every chat's `lastMessage.body` in place — the chat list
-/// preview reads from the exact same encrypted `messages.body`
-/// column as the open thread (see backend/src/models/chat.model.js
-/// `CHAT_SELECT`), so it needs the same treatment `ChatDetailController`
-/// gives message history: this is the one place that treatment happens
-/// for the *list* view, since `Chat` objects here are otherwise handed
-/// straight from the repository to the UI. Chats with no message yet, or
-/// whose last message is media (no inline body to decrypt), pass through
-/// unchanged. A chat whose key can't be derived (no local identity yet,
-/// or the other participant hasn't registered a public key) shows the
-/// same placeholder an undecryptable message in an open thread would.
+/// Decrypts every chat's `lastMessage.body` in place. A chat with no
+/// message, or media as its last message, passes through unchanged; one
+/// whose key can't be derived shows the same undecryptable placeholder
+/// an open thread would.
 Future<List<Chat>> _decryptPreviews(
   List<Chat> chats,
   EncryptionService encryptionService,
@@ -74,12 +67,9 @@ Future<Chat> _decryptPreview(
   }
 }
 
-/// Backs the "Active" tab. Archiving a chat removes it from this list
-/// locally (using the repository's response, not a guess) and — since
-/// the Archived tab's controller may not even be alive yet if that tab
-/// hasn't been opened — invalidates it so it fetches fresh whenever it
-/// next is, rather than trying to splice state across two controllers
-/// directly.
+/// Backs the "Active" tab. Archiving removes the chat locally and
+/// invalidates the Archived tab's controller so it refetches next time
+/// it's opened.
 class ActiveChatsController extends StateNotifier<AsyncValue<List<Chat>>> {
   ActiveChatsController(this._ref, this._repository)
     : _encryptionService = _ref.read(encryptionServiceProvider),
@@ -99,10 +89,7 @@ class ActiveChatsController extends StateNotifier<AsyncValue<List<Chat>>> {
       final chats = await _repository.listChats(archived: false);
       return _decryptPreviews(chats, _encryptionService, _secureStorage);
     });
-    // autoDispose + an await means this notifier may have been torn down
-    // while the request was in flight (e.g. the Archived tab's own
-    // refresh below disposing this one back, or the screen being popped)
-    // — writing to `state` past that point throws, per StateNotifier.
+    // May have been disposed while the request was in flight.
     if (!mounted) return;
     state = result;
   }

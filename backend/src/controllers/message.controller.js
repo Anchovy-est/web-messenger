@@ -3,21 +3,17 @@ const pushService = require('../services/push.service');
 const { chatRoom } = require('../sockets');
 const { ApiError } = require('../middleware/errorHandler');
 
-// Fire-and-forget: a push notification is a courtesy on top of a
-// message that's already durably persisted and broadcast — a failure
-// here (Firebase unreachable, a dead token, push not configured at all)
-// must never turn an otherwise-successful send into a 500 response.
+// Fire-and-forget: a push failure must never turn an otherwise
+// successful send into a 500 response.
 function notifyPush(message) {
   pushService
     .notifyNewMessage({ chatId: message.chatId, senderId: message.senderId, type: message.type })
     .catch((err) => console.error('Push notification failed:', err));
 }
 
-// `io` is only set on `app` by server.js (see server.js / sockets/index.js)
-// — absent in tests that exercise `createApp()` directly via supertest
-// without a real listening server. Broadcasting is a nice-to-have on top
-// of persistence, not a precondition for it, so this degrades silently
-// rather than failing the request.
+// `io` is only set on `app` by server.js — absent in tests exercising
+// createApp() directly. Broadcasting is a nice-to-have, not a
+// precondition, so this degrades silently instead of failing.
 function emitStatus(io, chatId, receipt) {
   if (io && receipt.messageIds.length > 0) {
     io.to(chatRoom(chatId)).emit('message:status', {

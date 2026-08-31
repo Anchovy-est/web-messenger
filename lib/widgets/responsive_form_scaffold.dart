@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Every auth screen (login, register, forgot/reset password, verify
-/// email) is a single scrollable form on an [AppBar]d [Scaffold] — this
-/// wraps that shared shape once so a wide (desktop/web) window shows a
-/// comfortably narrow, centered card instead of a form with its text
-/// fields and buttons stretched edge-to-edge across the whole browser
-/// window. Below [maxWidth] (i.e. every phone, and this app's whole mobile
-/// experience) the constraint never actually binds, so this renders
-/// pixel-identical to the plain `SingleChildScrollView` these screens used
-/// before — nothing about the mobile layout changes.
+/// Shared shape for every auth screen's scrollable form — caps the
+/// width on a wide window so fields don't stretch edge-to-edge; no
+/// effect on phone-sized windows.
 class ResponsiveFormScaffold extends StatelessWidget {
   const ResponsiveFormScaffold({
     super.key,
@@ -19,9 +13,7 @@ class ResponsiveFormScaffold extends StatelessWidget {
 
   final PreferredSizeWidget appBar;
 
-  /// The form content — typically a `Form` wrapping a `Column`, exactly
-  /// what each screen's body used to hand straight to
-  /// `SingleChildScrollView`.
+  /// The form content — typically a `Form` wrapping a `Column`.
   final Widget child;
 
   final double maxWidth;

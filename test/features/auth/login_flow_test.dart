@@ -35,11 +35,9 @@ class _FakeAuthRepository extends AuthRepository {
   final ApiException? loginError;
   User? currentUser;
 
-  /// Overrides what [fetchCurrentUser] throws — lets a test simulate the
-  /// backend being unreachable (a network/timeout/5xx `ApiException`,
-  /// like `ApiException.fromDioException` itself would produce) as
-  /// opposed to the default "no session" 401 below, which is a genuine,
-  /// confirmed rejection.
+  /// Overrides what [fetchCurrentUser] throws — lets a test simulate
+  /// the backend being unreachable (a network/timeout/5xx
+  /// `ApiException`), as opposed to the default "no session" 401 below.
   ApiException? restoreError;
 
   @override
@@ -187,13 +185,10 @@ void main() {
     'an expired session shows an explanatory message on the login screen',
     (tester) async {
       final repository = _FakeAuthRepository(currentUser: _fakeUser);
-      // A plain ProviderContainer (rather than the `_pumpApp` helper's
-      // implicit one) so the test can reach in and drive
-      // `forceLogoutLocally` directly — exactly the call
-      // `ApiClient.onSessionExpired` makes when a background request's
-      // silent token refresh fails, which isn't reachable by tapping
-      // anything in the UI (there's no real Dio traffic in this test's
-      // fakes to trigger it organically).
+      // A plain ProviderContainer so the test can reach in and drive
+      // `forceLogoutLocally` directly — the call
+      // `ApiClient.onSessionExpired` makes on a failed silent refresh,
+      // not reachable by tapping anything in this test's fakes.
       final container = ProviderContainer(
         overrides: [
           secureStorageServiceProvider.overrideWithValue(
@@ -251,7 +246,7 @@ void main() {
     );
   });
 
-  // --- Phase 12: session restore vs. backend/network failure ----------
+  // --- Session restore vs. backend/network failure ---------------------
 
   testWidgets(
     'a stored session that cannot be reached at startup shows a retry '
@@ -279,9 +274,8 @@ void main() {
       // Not bounced to the login screen — a connectivity failure must
       // never look identical to "you are logged out".
       expect(find.text('Log in'), findsNothing);
-      // The tokens are still there — nothing about failing to reach the
-      // server should have discarded a session that might still be
-      // perfectly valid.
+      // The tokens are still there — a failure to reach the server
+      // shouldn't discard a session that might still be valid.
       expect(await storage.readAccessToken(), 'stored-access-token');
     },
   );

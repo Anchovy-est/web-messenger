@@ -1,14 +1,11 @@
-// Integration tests for push.service.js's *decision* logic (who gets
+// Integration tests for push.service.js's decision logic (who gets
 // notified, and whether a chat is muted) against a real Postgres
-// connection — see auth.routes.test.js for how to run this suite.
+// connection.
 //
-// The actual Firebase Cloud Messaging call is deliberately not under
-// test here: there's no real Firebase project configured in this
-// environment (see docs/PUSH_NOTIFICATIONS.md), so `getMessaging()`
-// returns null and every send is a no-op — which is itself exactly what
-// these tests confirm: the absence of Firebase credentials degrades to
-// "does nothing", never to a thrown error that would take down message
-// sending or invitation creation.
+// The actual Firebase call isn't under test — with no Firebase project
+// configured, getMessaging() returns null and every send is a no-op,
+// which is exactly what these tests confirm: missing credentials
+// degrade to "does nothing", never a thrown error.
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
@@ -126,8 +123,8 @@ test('recipientTokensForMessage returns nothing if the recipient has no register
 });
 
 // A recipient muting their side of the chat must never affect the
-// *sender's* own experience — muting only ever suppresses a push to the
-// person who muted it.
+// sender's experience — muting only suppresses the push to whoever
+// muted it.
 test('one participant muting a chat does not affect what the other would receive', async () => {
   const alice = await registerAndLogin('pusha6');
   const bob = await registerAndLogin('pushb6');
@@ -141,8 +138,8 @@ test('one participant muting a chat does not affect what the other would receive
 
   // Bob (unmuted) sending to Alice (muted): suppressed.
   assert.deepEqual(await pushService.recipientTokensForMessage(chatId, bob.id), []);
-  // Alice (muted, but that's irrelevant to her own sends) sending to
-  // Bob (unmuted): still delivered.
+  // Alice (muted, but irrelevant to her own sends) sending to Bob
+  // (unmuted): still delivered.
   assert.deepEqual(await pushService.recipientTokensForMessage(chatId, alice.id), [
     'bob-device-6',
   ]);

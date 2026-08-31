@@ -40,10 +40,8 @@ router.post(
   asyncHandler(userController.uploadAvatar)
 );
 
-// Registers/replaces this user's end-to-end encryption public key. PUT
-// (not POST) since it's a full replace of a single resource —
-// there's only ever one current public key per user, same reasoning as
-// PUT /users/me for the profile fields above.
+// Registers/replaces this user's E2EE public key. PUT since it's a
+// full replace of a single resource, same reasoning as PUT /users/me.
 router.put(
   '/me/public-key',
   authenticate,
@@ -51,11 +49,9 @@ router.put(
   asyncHandler(userController.updatePublicKey)
 );
 
-// Registers this device's push notification token (see
-// push.service.js for where it's actually used). PUT, not POST — same
-// "full replace of a single resource" reasoning as the public-key route
-// above, except this resource is per-*device* rather than per-user: the
-// token itself, not req.userId, is what `pushToken.model.js` upserts on.
+// Registers this device's push token. PUT for the same "full replace"
+// reasoning as the public-key route, but per-device: the token itself,
+// not req.userId, is what pushToken.model.js upserts on.
 router.put(
   '/me/push-token',
   authenticate,

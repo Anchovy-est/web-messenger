@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 
-/// One field-level error from the backend's `error.details` array
-/// (see backend/src/middleware/validate.js).
+/// One field-level error from the backend's `error.details` array.
 class ApiFieldError {
   const ApiFieldError({required this.field, required this.message});
 
@@ -16,10 +15,8 @@ class ApiFieldError {
   }
 }
 
-/// Typed wrapper around the backend's uniform error shape
-/// `{ error: { code, message, details? } }` (see
-/// backend/src/middleware/errorHandler.js), so UI code can branch on
-/// [code] or read [fieldErrors] instead of parsing raw Dio errors.
+/// Typed wrapper around the backend's error shape
+/// `{ error: { code, message, details? } }`.
 class ApiException implements Exception {
   const ApiException({
     required this.statusCode,
@@ -34,17 +31,12 @@ class ApiException implements Exception {
   final String message;
   final List<ApiFieldError> fieldErrors;
 
-  /// The raw `error.details` payload for error codes that carry
-  /// structured (non-field-error) data — e.g. invitations'
-  /// `ALREADY_IN_CHAT` includes `{ chatId }` so the UI can navigate
-  /// straight there instead of just showing an error. Null whenever
-  /// `details` was a field-error list (see [fieldErrors] instead) or
-  /// absent entirely.
+  /// Structured error details for codes that aren't field errors (e.g.
+  /// `ALREADY_IN_CHAT` carries `{ chatId }`).
   final Map<String, dynamic>? details;
 
-  /// Builds an [ApiException] from any [DioException], falling back to a
-  /// generic network-error message when the response doesn't match the
-  /// backend's expected error shape (e.g. no connection at all).
+  /// Builds an [ApiException] from a [DioException], with a generic
+  /// network message when there's no response at all.
   factory ApiException.fromDioException(DioException e) {
     final data = e.response?.data;
     if (data is Map<String, dynamic> && data['error'] is Map<String, dynamic>) {
@@ -65,11 +57,7 @@ class ApiException implements Exception {
       );
     }
 
-    // No response reached us at all — distinguish *why* so the message is
-    // actually actionable instead of one generic "something's wrong" for
-    // every non-response failure (a slow server times out very
-    // differently from no network at all, and a cancelled request isn't
-    // really a failure the user needs to see).
+    // No response reached us — pick the message that actually fits.
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
@@ -99,8 +87,7 @@ class ApiException implements Exception {
     }
   }
 
-  /// Convenience: the message for a specific field, if the backend
-  /// reported one (e.g. show it inline under a form field).
+  /// The backend's error message for one field, if it reported one.
   String? messageForField(String field) {
     for (final error in fieldErrors) {
       if (error.field == field) return error.message;
@@ -112,14 +99,7 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// The message to show for any caught error: an [ApiException]'s own
-/// [ApiException.message] when it is one, or a generic fallback for
-/// anything else (an unexpected, non-API failure — every catch clause in
-/// this app is deliberately broad enough to reach this fallback rather
-/// than only handling `ApiException`, so a failure that isn't one still
-/// gets *some* visible feedback instead of none — see e.g.
-/// `_EditMessageDialog._save`'s doc comment for why). One shared spot for
-/// this exact ternary, instead of it being repeated at every catch site
-/// across the app.
+/// The message to show for any caught error — an [ApiException]'s own
+/// message, or a generic fallback otherwise.
 String errorMessageFor(Object error) =>
     error is ApiException ? error.message : 'Something went wrong.';

@@ -65,11 +65,8 @@ class _Composer extends StatelessWidget {
   }
 }
 
-/// Replaces [_Composer] while a voice message is being recorded — stop
-/// (checkmark) sends what's been recorded so far, cancel (trash)
-/// discards it. There is no text field or attach button here; recording
-/// is a distinct mode, not something that happens alongside composing
-/// text.
+/// Replaces [_Composer] while recording a voice message — stop sends
+/// it, cancel discards it.
 class _RecordingBar extends StatelessWidget {
   const _RecordingBar({
     required this.elapsed,

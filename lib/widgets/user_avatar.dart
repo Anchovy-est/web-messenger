@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/media_url.dart';
 
-/// A user's profile picture, or a generic placeholder when they don't
-/// have one set, or when the image fails to load (stale URL, network
-/// hiccup, deleted file). Reused wherever a user is shown: profile
-/// screen, search results, chat list/messages.
+/// A user's profile picture, or a generic placeholder when there isn't
+/// one (or it fails to load). Reused wherever a user is shown.
 class UserAvatar extends StatefulWidget {
   const UserAvatar({
     super.key,
@@ -17,11 +15,7 @@ class UserAvatar extends StatefulWidget {
   final String? avatarUrl;
   final double radius;
 
-  /// Shown in place of a picture when there isn't one (or it fails to
-  /// load) — a generic person by default, but a group chat (which has
-  /// no single "the" picture to fall back to any more than it has a
-  /// single "the" other participant) passes `Icons.groups` instead, so
-  /// its placeholder doesn't read as if it were a 1:1 chat.
+  /// Defaults to a person icon; a group chat passes `Icons.groups`.
   final IconData placeholderIcon;
 
   @override
@@ -34,8 +28,7 @@ class _UserAvatarState extends State<UserAvatar> {
   @override
   void didUpdateWidget(UserAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // A new URL (e.g. after uploading a replacement avatar) deserves a
-    // fresh attempt rather than staying stuck on a previous failure.
+    // A new URL deserves a fresh attempt, not a stuck old failure.
     if (oldWidget.avatarUrl != widget.avatarUrl) {
       _failedToLoad = false;
     }
@@ -49,9 +42,7 @@ class _UserAvatarState extends State<UserAvatar> {
         radius: widget.radius,
         backgroundImage: NetworkImage(resolveMediaUrl(url)),
         onBackgroundImageError: (exception, stackTrace) {
-          // Falls back to the placeholder below instead of leaving a
-          // blank circle (CircleAvatar doesn't do this on its own) or
-          // letting the load exception go uncaught.
+          // Falls back to the placeholder instead of a blank circle.
           if (mounted) setState(() => _failedToLoad = true);
         },
       );

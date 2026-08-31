@@ -7,39 +7,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'widgets/app_error_fallback.dart';
 
-/// FCM requires this to be a top-level (or static) function, run in its
-/// own isolate, for a push that arrives while the app is fully killed or
-/// backgrounded. There's nothing for it to actually do: FCM already
-/// shows a system-tray notification automatically in that case (the
-/// `notification` block on the payload — see
-/// backend/src/services/push.service.js), and tapping it is handled by
-/// `PushNotificationService.initialize`'s `getInitialMessage`/
-/// `onMessageOpenedApp` wiring once the app itself launches. This
-/// handler exists only because Firebase requires *something* to be
-/// registered, not because this app needs background processing.
+/// Required by FCM for a push that arrives while the app is killed —
+/// the system tray notification and tap handling are covered elsewhere,
+/// this just satisfies the registration requirement.
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await Firebase.initializeApp();
   } catch (_) {
-    // No real Firebase project configured yet (see
-    // docs/PUSH_NOTIFICATIONS.md) — nothing to do either way.
+    // No Firebase project configured — nothing to do.
   }
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Global error resilience: a widget that throws while building/laying
-  // out/painting shows this calm fallback instead of Flutter's own
-  // error widget (blank in release builds, alarming in debug ones) —
-  // Flutter already scopes the failure to just that one widget, so
-  // everything else on screen keeps working. `PlatformDispatcher.onError`
-  // catches whatever else reaches the platform layer uncaught (returning
-  // true marks it handled, so it's logged instead of crashing the
-  // isolate) — together these are what keeps the app in a recoverable
-  // state after an unexpected error rather than dying outright, with the
-  // error itself visible via [AppErrorFallback] instead of silent.
+  // A widget that throws while building shows this calm fallback
+  // instead of Flutter's own error screen; everything else keeps
+  // working. `PlatformDispatcher.onError` catches whatever else slips
+  // through uncaught.
   ErrorWidget.builder = (details) {
     FlutterError.presentError(details);
     return const AppErrorFallback();
@@ -53,11 +39,7 @@ Future<void> main() async {
     await Firebase.initializeApp();
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   } catch (_) {
-    // No real Firebase project configured yet — the rest of the app
-    // runs exactly as it would otherwise; `PushNotificationService`
-    // checks `Firebase.apps.isNotEmpty` before touching anything that
-    // would need it. See docs/PUSH_NOTIFICATIONS.md for how to set one
-    // up.
+    // No Firebase project configured — the app runs normally either way.
   }
   runApp(const ProviderScope(child: MessengerApp()));
 }

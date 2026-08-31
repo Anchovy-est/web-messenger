@@ -1,7 +1,6 @@
-// Integration tests for typing indicators — purely a socket relay, no
-// REST endpoint and nothing persisted, so this exercises the
-// socket layer directly against a real listening HTTP+socket.io server.
-// See message.routes.test.js for the same harness pattern.
+// Integration tests for typing indicators — a pure socket relay, no
+// REST endpoint and nothing persisted — against a real listening
+// HTTP+socket.io server.
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -81,9 +80,8 @@ function waitForEvent(socket, event, timeoutMs = 3000) {
   });
 }
 
-// For asserting an event does *not* arrive — a short, fixed wait rather
-// than the full timeout used by waitForEvent, so a negative test doesn't
-// have to sit through 3 seconds to pass.
+// For asserting an event does not arrive — a short fixed wait instead
+// of waitForEvent's full timeout, so a negative test passes quickly.
 function waitForSilence(socket, event, quietMs = 300) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, quietMs);

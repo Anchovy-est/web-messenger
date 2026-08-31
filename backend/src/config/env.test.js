@@ -1,6 +1,5 @@
-// Covers the production placeholder-secret guard added to env.js —
-// isolated from the rest of the suite (which needs the real, already-
-// loaded `env` singleton) by manipulating `process.env` and the module
+// Covers env.js's production placeholder-secret guard, isolated from
+// the rest of the suite by manipulating process.env and the module
 // cache directly, then restoring both afterward.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -28,10 +27,8 @@ function withEnv(overrides, fn) {
       else process.env[key] = saved[key];
     }
     delete require.cache[ENV_PATH];
-    // Re-require with the real environment restored so every other test
-    // file's already-cached `env` (or a fresh require of it later in
-    // this same file) reflects the actual test configuration again, not
-    // whatever this test just simulated.
+    // Re-require with the real environment restored, so every other
+    // cached `env` reflects the actual test config again.
     require('./env');
   }
 }

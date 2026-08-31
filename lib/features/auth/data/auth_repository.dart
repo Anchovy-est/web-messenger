@@ -5,8 +5,8 @@ import '../../../models/user.dart';
 import '../../../services/api_client.dart';
 import 'login_result.dart';
 
-/// Everything the auth feature needs from the backend, translated from
-/// raw Dio calls into typed methods that throw [ApiException] on failure.
+/// Everything the auth feature needs from the backend — typed methods
+/// that throw [ApiException] on failure.
 class AuthRepository {
   AuthRepository(this._apiClient);
 
@@ -61,9 +61,8 @@ class AuthRepository {
     }
   }
 
-  /// Fetches the current user for whatever access token is stored
-  /// (attached automatically by [ApiClient]'s interceptor). Used at app
-  /// startup to check whether a persisted session is still valid.
+  /// Used at startup to check whether a persisted session is still
+  /// valid.
   Future<User> fetchCurrentUser() async {
     try {
       final response = await _apiClient.dio.get('/auth/me');

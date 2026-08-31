@@ -85,10 +85,9 @@ test('returns an empty list for a nonexistent user', async () => {
 });
 
 test('returns multiple distinct results without duplicates when several users match', async () => {
-  // Short, distinct labels — usernames are `test_<label>_<runId>` capped
-  // at 20 chars, so a long/shared-prefix label here would truncate away
-  // the very substring being searched for (or collide with another
-  // test's username). Keep labels short and mutually distinct.
+  // Short, distinct labels — usernames are capped at 20 chars, so a
+  // long/shared-prefix label would truncate away the substring being
+  // searched for.
   const a = await registerAndLogin('dupa');
   const b = await registerAndLogin('dupb');
   const searcher = await registerAndLogin('searcher5');
@@ -167,9 +166,8 @@ test('treats a literal "%" in the search term as literal text, not a SQL wildcar
 test('treats a literal "_" in the search term as literal text, not a single-char SQL wildcard', async () => {
   const target = await registerAndLogin('wct');
   const searcher = await registerAndLogin('wcs2');
-  // Same length as target.username with its last character swapped for
-  // '_' — if '_' were an unescaped wildcard this would incorrectly match
-  // target.username (any character in that position would satisfy it).
+  // Same length as target.username with its last character swapped
+  // for '_' — an unescaped wildcard would incorrectly match it.
   const queryWithUnderscoreInWrongSpot = `${target.username.slice(0, -1)}_`;
 
   const res = await search(searcher.accessToken, queryWithUnderscoreInWrongSpot);

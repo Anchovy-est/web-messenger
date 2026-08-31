@@ -6,10 +6,9 @@ import 'package:mobile_messenger/providers/core_providers.dart';
 import '../../support/fake_secure_storage_service.dart';
 
 void main() {
-  // ThemeController._systemDefault reads WidgetsBinding.instance (to check
-  // the platform's brightness) even in these otherwise-plain `test()`
-  // cases — this initializes that binding without needing testWidgets'
-  // full widget-pumping machinery.
+  // ThemeController._systemDefault reads WidgetsBinding.instance for
+  // platform brightness — this initializes that binding without
+  // needing testWidgets' full pumping machinery.
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(

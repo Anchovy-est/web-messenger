@@ -1,10 +1,9 @@
 // Integration test for the email verification flow against a real
-// Postgres connection — see auth.routes.test.js for how to run this.
+// Postgres connection.
 //
-// The outgoing email itself is intercepted by monkey-patching
-// email.service's exported `sendEmail` (Node caches the module, so
-// auth.service.js sees the same mutated function) rather than pulling in
-// a mocking library just for this one seam.
+// The outgoing email is intercepted by monkey-patching email.service's
+// exported `sendEmail` (Node caches the module, so auth.service.js sees
+// the same mutated function) instead of pulling in a mocking library.
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
@@ -95,10 +94,8 @@ test('POST /auth/verify-email rejects reusing the same code twice', async () => 
   const first = await request(app).post('/auth/verify-email').send({ email, code });
   assert.equal(first.status, 200);
 
-  // The user is already verified after the first call, so this second
-  // call with the (now consumed) code succeeds idempotently rather than
-  // failing — verifying an already-verified account is treated as
-  // success, not an error.
+  // Already verified after the first call, so this second call with
+  // the consumed code succeeds idempotently rather than failing.
   const second = await request(app).post('/auth/verify-email').send({ email, code });
   assert.equal(second.status, 200);
   assert.equal(second.body.user.emailVerified, true);

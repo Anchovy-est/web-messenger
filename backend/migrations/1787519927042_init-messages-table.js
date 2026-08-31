@@ -3,11 +3,9 @@
 exports.shorthands = undefined;
 
 exports.up = (pgm) => {
-  // Baseline columns cover text messaging. `type`/`media_url` are
-  // already here so image/video/audio messages reuse this same table
-  // instead of a schema migration per media type; `edited_at`/
-  // `deleted_at` are here so editing and soft-delete don't need a later
-  // ALTER TABLE either.
+  // type/media_url are here from the start so image/video/audio reuse
+  // this table without a migration per media type; edited_at/deleted_at
+  // likewise so editing and soft-delete need no later ALTER TABLE.
   pgm.createTable('messages', {
     id: {
       type: 'uuid',
@@ -45,9 +43,8 @@ exports.up = (pgm) => {
   // Message list pagination: "latest N messages in this chat".
   pgm.createIndex('messages', ['chat_id', 'created_at']);
 
-  // Per-recipient delivery/read state. Modeled per (message, user)
-  // rather than a single timestamp on chat_participants so group chats
-  // can show "read by 2 of 4" instead of one shared read marker.
+  // Per-recipient delivery/read state, keyed by (message, user) so
+  // group chats can show "read by 2 of 4" instead of one shared marker.
   pgm.createTable('message_receipts', {
     message_id: {
       type: 'uuid',

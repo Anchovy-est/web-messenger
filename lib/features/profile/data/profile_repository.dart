@@ -35,11 +35,8 @@ class ProfileRepository {
     }
   }
 
-  /// Registers/replaces this device's end-to-end encryption public key —
-  /// called by [SessionController] the first time this device has no
-  /// locally-stored identity keypair yet. See
-  /// lib/services/encryption_service.dart; the corresponding private key
-  /// never goes anywhere near this call.
+  /// Registers/replaces this device's end-to-end encryption public key.
+  /// The private key never goes anywhere near this call.
   Future<User> updatePublicKey(String publicKey) async {
     try {
       final response = await _apiClient.dio.put(
@@ -52,12 +49,7 @@ class ProfileRepository {
     }
   }
 
-  /// Registers this device's push notification token with the backend
-  /// (see backend/src/services/push.service.js) — called by
-  /// [SessionController] after login/restore, and again whenever
-  /// [PushNotificationService.onTokenRefresh] fires. A device with no
-  /// registered token simply never receives a push; no error to handle
-  /// beyond the normal [ApiException] path.
+  /// Registers this device's push token with the backend.
   Future<void> registerPushToken(
     String token, {
     String platform = 'android',
@@ -72,9 +64,8 @@ class ProfileRepository {
     }
   }
 
-  /// Unregisters this device's push token — called on logout, and by
-  /// the in-app "Push notifications" toggle when turned off, so a
-  /// signed-out (or opted-out) device stops receiving pushes immediately.
+  /// Unregisters this device's push token — on logout, or when the
+  /// in-app toggle is turned off.
   Future<void> unregisterPushToken(String token) async {
     try {
       await _apiClient.dio.delete(
@@ -86,18 +77,9 @@ class ProfileRepository {
     }
   }
 
-  /// [bytes] + [filename] (rather than a local file path) is what makes
-  /// this work on every platform this app runs on, Web included: the
-  /// caller (`EditProfileScreen`) gets both straight from image_picker's
-  /// `XFile.readAsBytes()`/`.name`, which — unlike `XFile.path` — are
-  /// meaningful cross-platform (`.path` is a real filesystem path on
-  /// mobile, but a `blob:` URL on web that `dio`'s file-path-based
-  /// `MultipartFile.fromFile` can't read at all). [filename]'s extension
-  /// is also what lets `dio` set the right Content-Type on the upload
-  /// part; the backend is the authoritative validator either way (see
-  /// backend/src/utils/imageType.js's magic-byte check) — a rejected file
-  /// surfaces as a normal [ApiException] (INVALID_FILE_TYPE /
-  /// FILE_TOO_LARGE) for the UI to display.
+  /// Bytes + filename, not a file path — works on Web too, where a
+  /// picked file has no real path. The backend re-validates the file
+  /// type by magic bytes either way.
   Future<User> uploadAvatar({
     required Uint8List bytes,
     required String filename,

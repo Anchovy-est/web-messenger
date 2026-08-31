@@ -18,19 +18,11 @@ import '../features/search/presentation/search_screen.dart';
 import '../models/user.dart';
 import 'app_shell.dart';
 
-/// Central route table, gated by [SessionController]'s state:
-/// - `unknown` (still restoring a persisted session): splash screen only.
-/// - `unauthenticated`: forced to /login (or /register).
-/// - `authenticated`: forced away from /login and /register.
-///
-/// Rebuilding this whole provider (rather than using a
-/// `refreshListenable`) is a deliberate simplification — a fresh route
-/// stack is exactly what we want on login/logout. But it must only
-/// rebuild on a *status* transition, not on every change to the session's
-/// user object — watching the full [SessionState] here would blow away
-/// the navigation stack (back to `initialLocation`) on every profile
-/// edit/avatar upload, since those call `SessionController.updateUser`
-/// too. `.select` scopes the watch to just the enum.
+/// Central route table, gated by [SessionController]'s state: `unknown`
+/// shows the splash screen, `unauthenticated` forces /login,
+/// `authenticated` forces away from /login and /register. Rebuilds the
+/// whole router on a status change only (`.select`), not on every user
+/// edit, so a profile update doesn't reset the nav stack.
 final appRouterProvider = Provider<GoRouter>((ref) {
   final status = ref.watch(sessionControllerProvider.select((s) => s.status));
 
@@ -71,11 +63,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           initialEmail: state.uri.queryParameters['email'],
         ),
       ),
-      // Every authenticated-area route is wrapped in one persistent
-      // `AppShell` — on a phone-sized window it renders each of these
-      // exactly as if this ShellRoute didn't exist (see `AppShell`'s own
-      // doc comment); on a desktop/web-sized window it adds the
-      // sidebar + master-detail chrome around them instead.
+      // Every authenticated route is wrapped in one persistent
+      // `AppShell` — unchanged on mobile, sidebar chrome on desktop/web.
       ShellRoute(
         builder: (context, state, child) =>
             AppShell(state: state, child: child),

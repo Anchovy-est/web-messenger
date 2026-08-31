@@ -23,10 +23,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // Deferred to after the first frame so `context` is safe to use for
-    // a SnackBar. Read-and-clear (see the flag's own doc comment) means
-    // this only ever fires once per expiry, not on every rebuild of this
-    // screen (e.g. switching between /login and /register).
+    // After the first frame so `context` is safe for a SnackBar.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final expired = ref

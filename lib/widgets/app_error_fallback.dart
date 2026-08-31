@@ -1,15 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Replaces Flutter's default red/grey "error screen" wherever a widget
-/// throws while building, laying out, or painting — wired up once, in
-/// `main()`, via `ErrorWidget.builder`. Flutter already scopes a thrown
-/// build error to just the widget that threw (its siblings, the rest of
-/// the screen, navigation — all keep working normally), so showing a
-/// small, calm fallback here rather than Flutter's own error widget
-/// (which is minimal/blank in release builds, and alarming in debug
-/// ones) is what actually delivers "reloads to the last stable state"
-/// with visible feedback, not a crash: the one broken widget shows this
-/// instead of dying loudly, everything around it is unaffected.
+/// Replaces Flutter's default error screen wherever a widget throws
+/// while building — wired up via `ErrorWidget.builder` in `main()`.
+/// Only the broken widget shows this; everything else keeps working.
 class AppErrorFallback extends StatelessWidget {
   const AppErrorFallback({super.key});
 

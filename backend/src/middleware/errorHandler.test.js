@@ -1,10 +1,7 @@
-// Unit-level coverage for errorHandler.js's error-classification branches,
-// exercised through a minimal throwaway app rather than the real one —
-// the real routes never deliberately throw a raw ECONNREFUSED or a
-// MulterError, so this is the only way to prove each branch actually
-// produces the response it claims to, including ones that only happen
-// during a genuine outage (a database connection failure) that route-level
-// tests against a real, healthy database can't otherwise trigger.
+// Unit-level coverage for errorHandler.js's classification branches,
+// through a minimal throwaway app — real routes never deliberately
+// throw a raw ECONNREFUSED or MulterError, so this is the only way to
+// prove each branch produces the response it claims to.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
@@ -57,15 +54,14 @@ test('a database connection failure (ECONNREFUSED) becomes a 503, not a bare 500
 
   assert.equal(res.status, 503);
   assert.equal(res.body.error.code, 'SERVICE_UNAVAILABLE');
-  // The message tells the client it's worth retrying, and doesn't leak
-  // the raw connection string/host from the underlying error.
+  // Tells the client it's worth retrying without leaking the raw
+  // connection string/host.
   assert.match(res.body.error.message, /temporarily unavailable/i);
 });
 
 test('an unexpectedly dropped database connection also becomes a 503', async () => {
-  // pg raises this one with no `.code` at all — just this message — when
-  // a live connection is severed mid-query, so the handler also matches
-  // on message text for this one case.
+  // pg raises this with no `.code` at all when a live connection is
+  // severed mid-query, so the handler also matches on message text.
   const droppedError = new Error('Connection terminated unexpectedly');
   const app = appThatThrows(droppedError);
   const res = await request(app).get('/boom');

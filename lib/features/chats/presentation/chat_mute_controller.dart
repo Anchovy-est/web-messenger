@@ -4,19 +4,9 @@ import '../data/chat_providers.dart';
 import '../data/chat_repository.dart';
 
 /// Whether the current user has muted this chat's push notifications —
-/// one instance per chat (keyed by chatId via `.family`), separate from
-/// [ChatDetailController] for the same reason [TypingIndicatorController]
-/// is: this is its own small, independent concern, not something the
-/// message-thread controller needs to carry around.
-///
-/// Fetches the chat once, on creation, purely to read its current
-/// [Chat.mutedAt] — [ChatDetailScreen] doesn't otherwise have that value
-/// on hand (it navigates in with only a chat id/title/avatar, not a full
-/// [Chat]). [toggle] is optimistic-free by design: it waits for the
-/// server's confirmation before flipping the icon, since a push-setting
-/// toggle is rare enough that the round trip is imperceptible, and
-/// getting it visibly wrong (showing "muted" when the request actually
-/// failed) is worse than a few hundred milliseconds of a disabled button.
+/// one instance per chat. Not optimistic: waits for the server before
+/// flipping the icon, since getting it visibly wrong is worse than a
+/// brief disabled button.
 class ChatMuteController extends StateNotifier<AsyncValue<bool>> {
   ChatMuteController(this._chatId, this._repository)
     : super(const AsyncValue.loading()) {
@@ -36,9 +26,8 @@ class ChatMuteController extends StateNotifier<AsyncValue<bool>> {
     state = result;
   }
 
-  /// Mutes if currently unmuted, unmutes if currently muted. A no-op
-  /// (not an error) while the initial load is still in flight or already
-  /// failed — there's nothing known to toggle yet in either case.
+  /// Mutes if unmuted, unmutes if muted. No-op while the initial load
+  /// is still in flight.
   Future<void> toggle() async {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -54,13 +43,8 @@ class ChatMuteController extends StateNotifier<AsyncValue<bool>> {
     });
     if (!mounted) return;
     if (result.hasError) {
-      // Two separate assignments, deliberately — see
-      // NotificationSettingsController.setEnabled's identical pattern
-      // for why collapsing this into one would silently lose the error
-      // state before anything could ever observe it. Settling back to
-      // [previous] is "last stable state" rather than getting stuck on
-      // the loading spinner or landing on a value that was never
-      // confirmed.
+      // Let listeners see the error, then settle back to the last
+      // stable value.
       state = result;
       if (!mounted) return;
       state = previous;

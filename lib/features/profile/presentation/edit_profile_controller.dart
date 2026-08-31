@@ -15,8 +15,7 @@ class EditProfileController extends StateNotifier<AsyncValue<void>> {
       final User updated = await _ref
           .read(profileRepositoryProvider)
           .updateProfile(username: username, bio: bio);
-      // Reflect the change everywhere the session's user is shown
-      // (profile screen, home banner, etc.) without a re-login round trip.
+      // Reflect the change everywhere the session's user is shown.
       _ref.read(sessionControllerProvider.notifier).updateUser(updated);
     });
   }

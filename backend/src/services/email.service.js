@@ -1,10 +1,9 @@
 const nodemailer = require('nodemailer');
 const env = require('../config/env');
 
-// With no SMTP host configured (the default for local dev — see
-// .env.example), fall back to logging the email instead of sending it.
-// This keeps registration/verification working out of the box without
-// requiring a real mailbox for every contributor.
+// With no SMTP host configured (the local-dev default), log the email
+// instead of sending it, so registration/verification still works
+// without a real mailbox.
 const transporter = env.smtpHost
   ? nodemailer.createTransport({
       host: env.smtpHost,

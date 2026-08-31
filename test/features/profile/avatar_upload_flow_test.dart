@@ -122,20 +122,15 @@ void main() {
         .read(avatarUploadControllerProvider.notifier)
         .upload(bytes: Uint8List.fromList([1, 2, 3]), filename: 'photo.png');
     // A bounded pump, not pumpAndSettle: a NetworkImage that fails to
-    // load (as it always will here — there's no real server behind
-    // '/uploads/avatars/u1-123.png' in a widget test) can keep
-    // rescheduling frames, which makes pumpAndSettle's "wait until
-    // nothing is scheduled" heuristic unreliable. UserAvatar itself
-    // falls back to the placeholder icon on a load error (see
-    // lib/widgets/user_avatar.dart) — that fallback, not a successfully
-    // decoded image, is what real widget tests can actually observe.
+    // load (as it always will in a widget test) can keep rescheduling
+    // frames, making pumpAndSettle unreliable. UserAvatar falls back
+    // to a placeholder icon on load error — that's what's observable.
     await tester.pump();
 
     expect(profileRepository.lastUploadedBytes, [1, 2, 3]);
     expect(profileRepository.lastUploadedFilename, 'photo.png');
-    // Confirms the *data* flowed through to the widget — the real
-    // network fetch behind it isn't something a widget test can
-    // meaningfully assert on.
+    // Confirms the data flowed through to the widget — the real
+    // network fetch behind it isn't something a widget test can assert.
     final avatar = tester.widget<UserAvatar>(find.byType(UserAvatar));
     expect(avatar.avatarUrl, '/uploads/avatars/u1-123.png');
   });
@@ -150,12 +145,9 @@ void main() {
 
     final element = tester.element(find.byType(Scaffold).first);
     final container = ProviderScope.containerOf(element);
-    // Deliberately not awaited here — awaiting it directly alongside a
-    // real (non-fake-clock) `Future.delayed` inside the fake repository
-    // reliably hung this test; `tester.pump(duration)` below both
-    // advances past that delay and lets the test framework's own event
-    // loop interleave with it, which is the supported way to drive a
-    // real timer-backed async operation in a widget test.
+    // Deliberately not awaited — awaiting it directly alongside the
+    // fake repository's real `Future.delayed` reliably hung this test.
+    // `tester.pump(duration)` below advances past the delay instead.
     unawaited(
       container
           .read(avatarUploadControllerProvider.notifier)

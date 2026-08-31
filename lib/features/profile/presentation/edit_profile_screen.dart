@@ -75,11 +75,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     );
     if (picked == null || !mounted) return;
 
-    // Bytes + name, not `picked.path` — on Web, `XFile.path` is a
-    // `blob:` URL, not a real filesystem path, so it's `readAsBytes()`
-    // (backed by a real file on mobile, by the in-memory Blob on web)
-    // that actually works on every platform. See
-    // `ProfileRepository.uploadAvatar`'s doc comment.
+    // Bytes + name, not `picked.path` — works on Web too.
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
     ref
@@ -96,8 +92,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final avatarState = ref.watch(avatarUploadControllerProvider);
     final avatarError = avatarState.hasError ? avatarState.error : null;
     final avatarApiError = avatarError is ApiException ? avatarError : null;
-    // Reflects the live session user so a just-uploaded avatar shows
-    // immediately, rather than the snapshot this screen was opened with.
+    // Live session user, so a just-uploaded avatar shows immediately.
     final currentAvatarUrl = ref
         .watch(sessionControllerProvider)
         .user

@@ -9,13 +9,9 @@ class InvitationRepository {
 
   final ApiClient _apiClient;
 
-  /// Throws [ApiException] with code `ALREADY_IN_CHAT` (details:
-  /// `{chatId}`) if the two users already share a chat, or
-  /// `INVITATION_ALREADY_PENDING` (details: `{invitationId}`) if one is
-  /// already outstanding between them — see backend/src/services/
-  /// invitation.service.js. Both carry enough in `details` for the UI to
-  /// route straight to the relevant chat/invitation instead of just
-  /// showing an error.
+  /// Throws `ALREADY_IN_CHAT` (details: `{chatId}`) or
+  /// `INVITATION_ALREADY_PENDING` (details: `{invitationId}`) — both
+  /// carry enough to route straight to the relevant chat/invitation.
   Future<Invitation> sendInvitation(String inviteeId) async {
     try {
       final response = await _apiClient.dio.post(

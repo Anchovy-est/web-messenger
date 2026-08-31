@@ -1,9 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-/// The trimmed-down user info the backend embeds in an invitation
-/// (see backend/src/models/invitation.model.js `toPublicInvitation`) —
-/// deliberately smaller than the full [User] model since an invitation
-/// has no business exposing the other party's email or bio.
+/// Trimmed-down user info embedded in an invitation — no email or bio.
 class InvitationParticipant extends Equatable {
   const InvitationParticipant({
     required this.id,

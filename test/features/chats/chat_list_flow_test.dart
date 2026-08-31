@@ -83,13 +83,10 @@ class _FakeChatRepository extends ChatRepository {
     return archived.firstWhere((c) => c.id == chatId);
   }
 
-  // `ChatDetailController` fetches the chat once at startup to read the
-  // other participant's public key for encryption — without this
-  // override that falls through to the real `ChatRepository`'s real
-  // network call, which never resolves in a test and hangs
-  // `pumpAndSettle()` (see the "open a chat" test below, whose own
-  // comment already notes this screen must render without a real network
-  // call).
+  // `ChatDetailController` fetches the chat once at startup for the
+  // other participant's public key — without this override that falls
+  // through to a real network call, which never resolves in a test and
+  // hangs `pumpAndSettle()`.
   @override
   Future<Chat> getChat(String chatId) async {
     return [...active, ...archived].firstWhere((c) => c.id == chatId);
@@ -121,9 +118,8 @@ Future<void> _pumpChatList(
   required _FakeChatRepository repository,
   FakeSocketService? socket,
 }) async {
-  // A router scoped to just what the chat list touches — the real app's
-  // router additionally gates everything on session status, which isn't
-  // this feature's concern (see login_flow_test.dart for that).
+  // A router scoped to just what the chat list touches — the real
+  // app's router also gates on session status, not this file's concern.
   final router = GoRouter(
     initialLocation: '/',
     routes: [
@@ -145,14 +141,11 @@ Future<void> _pumpChatList(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        // No identity key configured here (unlike most other flow
-        // tests, which rely on the fake's default one) — this file
-        // is about list/sort/archive behavior, not encryption, so
-        // `ChatListController` short-circuits its decrypt-the-preview
-        // step and shows `lastMessage.body` exactly as given, letting
-        // every fixture below stay plain text. See
-        // chat_detail_flow_test.dart for real end-to-end-encrypted
-        // fixtures.
+        // No identity key configured here — this file is about
+        // list/sort/archive behavior, not encryption, so
+        // `ChatListController` short-circuits decryption and shows
+        // `lastMessage.body` as given, letting fixtures stay plain
+        // text.
         secureStorageServiceProvider.overrideWithValue(
           FakeSecureStorageService(identityPrivateKey: null),
         ),
@@ -217,9 +210,8 @@ void main() {
       expect(find.textContaining('No chats yet.'), findsOneWidget);
       expect(find.byType(RefreshIndicator), findsOneWidget);
 
-      // Actually drag to confirm the empty state is inside a *scrollable*
-      // that RefreshIndicator can detect the gesture on — not just present
-      // in the tree but inert, which a bare Center() would still be.
+      // Actually drag to confirm the empty state is inside a scrollable
+      // RefreshIndicator can detect, not just present but inert.
       await tester.fling(
         find.textContaining('No chats yet.'),
         const Offset(0, 300),
@@ -333,9 +325,8 @@ void main() {
     await tester.tap(find.text('bob'));
     await tester.pumpAndSettle();
 
-    // Landed on the real chat detail screen for the right chat — its own
-    // content (history, composer) is covered by
-    // chat_detail_flow_test.dart.
+    // Landed on the real chat detail screen for the right chat — its
+    // own content is covered by chat_detail_flow_test.dart.
     expect(find.text('No messages yet. Say hello!'), findsOneWidget);
     // The detail screen's own AppBar carries over the chat's display name.
     expect(find.text('bob'), findsOneWidget);

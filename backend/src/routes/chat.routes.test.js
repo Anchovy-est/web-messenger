@@ -27,9 +27,9 @@ async function registerAndLogin(label) {
   return { id: res.body.user.id, username, accessToken: res.body.accessToken };
 }
 
-// Creates a real accepted chat between two users via the actual
-// invitation flow, rather than inserting rows directly — exercises the
-// same path a real user would.
+// Creates a real accepted chat via the actual invitation flow, rather
+// than inserting rows directly — exercises the same path a real user
+// would.
 async function createAcceptedChat(inviter, invitee) {
   const sendRes = await request(app)
     .post('/invitations')
@@ -112,8 +112,8 @@ test('chats are sorted by most recent activity, most recent first', async () => 
   );
 
   // A new message on the older chat should bump it back to the top —
-  // inserted directly here to isolate this test from the message-sending
-  // endpoint's own behavior.
+  // inserted directly to isolate this from the send endpoint's own
+  // behavior.
   await pool.query(
     `INSERT INTO messages (chat_id, sender_id, type, body) VALUES ($1, $2, 'text', 'hi')`,
     [olderChatId, bob.id]
@@ -260,13 +260,11 @@ test('requires authentication for every endpoint', async () => {
   assert.equal(archiveRes.status, 401);
 });
 
-// --- Muting ---------------------------------------------------------------
+// --- Muting -----------------------------------------------------------
 //
-// Same shape as archiving above, on purpose — mute/unmute is a distinct
-// per-user preference from archive/unarchive (see
-// backend/src/models/chat.model.js `setMuted`), but the endpoint
-// contract is deliberately identical: 200 with the updated chat, 404 for
-// a chat you're not in, per-user (not shared) effect.
+// Same shape as archiving above on purpose: a distinct per-user
+// preference, but the same endpoint contract — 200 with the updated
+// chat, 404 if you're not in it, per-user rather than shared.
 
 test('muting a chat sets mutedAt, and the other participant is unaffected', async () => {
   const alice = await registerAndLogin('clm1');

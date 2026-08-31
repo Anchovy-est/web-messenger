@@ -1,12 +1,6 @@
-/// Build-time configuration for reaching the backend.
-///
-/// Override at build/run time with `--dart-define`, e.g.:
-///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3001
-///
-/// Defaults target the Android emulator's alias for the host machine's
-/// localhost (`10.0.2.2`), matching the backend's docker-compose host port
-/// (see docker-compose.yml — 3001 was chosen there to dodge a local port
-/// conflict on this dev machine, not for any architectural reason).
+/// Build-time config for reaching the backend. Override with
+/// `--dart-define=API_BASE_URL=...`. Defaults to the Android emulator's
+/// alias for localhost.
 class Env {
   Env._();
 

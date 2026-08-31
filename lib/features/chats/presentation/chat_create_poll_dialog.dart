@@ -1,19 +1,12 @@
 part of 'chat_detail_screen.dart';
 
-/// Minimum/maximum option count — mirrors
-/// backend/src/schemas/poll.schema.js `createPollSchema` exactly, so a
-/// client-side rejection here (instant, no round trip) and the server's
-/// own rejection (the actual authority) never disagree about what's
-/// allowed.
+/// Mirrors the backend's own option-count limits.
 const _minPollOptions = 2;
 const _maxPollOptions = 10;
 
-/// A modal dialog to create a poll in this (group) chat — question, a
-/// dynamic list of options (2 to [_maxPollOptions]), and a public/
-/// anonymous choice. Same not-optimistic, stays-open-with-inline-error
-/// shape as [_EditMessageDialog]: a poll has no local placeholder to
-/// show immediately the way a text message does, so this simply waits
-/// for the server to confirm before closing.
+/// A modal dialog to create a poll — question, a dynamic list of
+/// options, and a public/anonymous choice. Not optimistic: waits for
+/// the server to confirm before closing.
 class _CreatePollDialog extends ConsumerStatefulWidget {
   const _CreatePollDialog({required this.chatId});
 
@@ -84,10 +77,7 @@ class _CreatePollDialogState extends ConsumerState<_CreatePollDialog> {
           );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      // Deliberately not just `on ApiException` — see the identical
-      // reasoning in `_EditMessageDialog._save`: anything unforeseen
-      // must still reset `_saving`, or this dialog is stuck on a
-      // permanently disabled Create button forever.
+      // Broad catch — see `_EditMessageDialog._save`'s same reasoning.
       if (!mounted) return;
       setState(() {
         _saving = false;

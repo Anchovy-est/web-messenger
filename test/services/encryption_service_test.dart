@@ -1,8 +1,7 @@
 // Pure crypto correctness tests for the end-to-end encryption service —
-// no widget/platform dependency, since this is exercising `EncryptionService`
-// directly. See backend/src/routes/message.routes.test.js for the
-// equivalent proof from the *server's* side (using Node's own crypto
-// primitives, to show the two independent implementations interoperate).
+// no widget/platform dependency, exercising `EncryptionService` directly.
+// See backend/src/routes/message.routes.test.js for the equivalent
+// proof on the server side, showing the two implementations interoperate.
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -300,11 +299,9 @@ void main() {
   test(
     'a self-derived key (deriveChatKey against my own public key) lets a device decrypt its own wrapped entry',
     () async {
-      // This is exactly what `ChatDetailController` relies on to let a
-      // device read its own past group messages after a reload — every
-      // recipient map it builds includes an entry for itself, wrapped
-      // with a key derived against its own public key rather than a
-      // peer's.
+      // What lets a device read its own past group messages after a
+      // reload — every recipient map includes an entry for itself,
+      // wrapped against its own public key rather than a peer's.
       final me = await service.generateIdentityKeyPair();
       final myPublicKey = await service.exportPublicKey(me);
       final selfKey = await service.deriveChatKey(

@@ -15,14 +15,12 @@ class _MessageBubble extends ConsumerWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onLongPress;
 
-  /// The active in-chat search query (see [MessageSearchController]), if
-  /// any — matching substrings in this message's text get a highlighted
-  /// background. `null`/empty means no search is active right now.
+  /// The active in-chat search query, if any — matching text gets a
+  /// highlighted background.
   final String? searchQuery;
 
-  /// Whether this is the specific match the user has currently navigated
-  /// to via the search bar's prev/next controls — drawn with an extra
-  /// border so it stands out from the other (also-highlighted) matches.
+  /// Whether this is the currently-selected search match — drawn with
+  /// an extra border.
   final bool isCurrentMatch;
 
   @override
@@ -31,18 +29,15 @@ class _MessageBubble extends ConsumerWidget {
     final controller = ref.read(
       chatDetailControllerProvider(message.chatId).notifier,
     );
-    // A group message from someone else names its sender — with more
-    // than one possible "not me", bubble alignment alone (all a 1:1
-    // chat needs, since there's only ever one other participant,
-    // already named in the app bar) no longer says who sent it.
+    // A group message from someone else names its sender — bubble
+    // alignment alone doesn't say who, once there's more than one
+    // possible "not me".
     final senderName = (!isMine && controller.isGroup)
         ? controller.participantNames[message.senderId]
         : null;
 
     if (message.isDeleted) {
-      // Same placeholder regardless of who sent it — both the sender and
-      // the recipient see "This message was deleted", not two different
-      // views of the same event.
+      // Same placeholder for sender and recipient alike.
       return Align(
         alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
@@ -189,11 +184,8 @@ class _MessageBubble extends ConsumerWidget {
     );
   }
 
-  /// The message's actual content, above the status/timestamp row — text
-  /// for a plain message, or a thumbnail/player for an image/video one.
-  /// [textColor] is whatever the caller already worked out
-  /// for this bubble's state (failed/mine/theirs); media content ignores
-  /// it since it's a rendered image or video, not colored text.
+  /// The message's content — text, or a thumbnail/player for media.
+  /// [textColor] is ignored by media content.
   Widget _buildBody(Color textColor) {
     switch (message.type) {
       case 'image':
@@ -213,10 +205,8 @@ class _MessageBubble extends ConsumerWidget {
     }
   }
 
-  /// Renders [text] in [textColor], except any substring matching
-  /// [searchQuery] (case-insensitively) — the same substrings
-  /// [MessageSearchController] counted as a match in the first place —
-  /// which gets a highlighted background so it's visible at a glance.
+  /// Renders [text] in [textColor], with any [searchQuery] match
+  /// highlighted.
   Widget _highlightedText(String text, Color textColor) {
     final query = searchQuery?.trim() ?? '';
     if (query.isEmpty) {
@@ -293,8 +283,7 @@ class _StatusIcon extends StatelessWidget {
           color: Colors.lightBlueAccent,
         );
       case MessageStatus.failed:
-        // The bubble itself switches to an error style for `failed` — see
-        // _MessageBubble.build — so this case never actually renders.
+        // Never renders — the bubble switches to an error style instead.
         return const SizedBox.shrink();
     }
   }

@@ -5,9 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../core/theme/floral_palette.dart';
 
-/// One placed instance of the flower illustration — everything about it
-/// (color, opacity, size, rotation, position) is independent of every
-/// other instance, per the Floral theme's design brief.
+/// One placed instance of the flower illustration.
 @immutable
 class _FlowerSpec {
   const _FlowerSpec({
@@ -26,31 +24,15 @@ class _FlowerSpec {
   /// Radians.
   final double rotation;
 
-  /// 0.0–1.0 of the available width/height — resolved to actual pixels
-  /// at layout time, so the same composition scales sensibly across
-  /// different screen sizes rather than being pinned to fixed pixel
-  /// coordinates.
+  /// 0.0–1.0 of the available width/height, resolved at layout time.
   final double leftFraction;
   final double topFraction;
 }
 
-/// The Floral theme's decorative backdrop: a soft pastel base color plus
-/// several low-opacity, independently colored/sized/rotated copies of
-/// `assets/flowers/flower.svg`, with [child] (the actual app content) on
-/// top. Only ever mounted while the Floral theme is active — see
-/// `MessengerApp`, which wraps the routed content in this widget
-/// conditionally and nothing else, so switching away from Floral removes
-/// every trace of it rather than leaving flowers bleeding into another
-/// theme.
-///
-/// The flower composition (each instance's color/opacity/size/rotation/
-/// position) is generated exactly once, in [State.initState], and cached
-/// for this widget's lifetime — not recomputed on every rebuild, which
-/// would make the background visibly jump around on every navigation.
-/// Since `MessengerApp` mounts one `FloralBackground` instance behind the
-/// whole app (not one per screen), this same composition also stays
-/// stable across screens — a calm, consistent backdrop instead of a
-/// different flower arrangement per route.
+/// The Floral theme's decorative backdrop: a pastel base plus several
+/// low-opacity flower copies, with [child] on top. Only mounted while
+/// Floral is active. The composition is generated once and cached, so
+/// it stays stable across navigation instead of jumping around.
 class FloralBackground extends StatefulWidget {
   const FloralBackground({super.key, required this.child});
 
@@ -116,8 +98,7 @@ class _FloralBackgroundState extends State<FloralBackground> {
                           flower.topFraction * constraints.maxHeight -
                           flower.size / 2,
                       child: IgnorePointer(
-                        // Purely decorative — must never intercept taps
-                        // meant for the real UI on top of it.
+                        // Purely decorative — never intercepts taps.
                         child: Opacity(
                           opacity: flower.opacity,
                           child: Transform.rotate(

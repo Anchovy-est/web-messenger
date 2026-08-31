@@ -3,45 +3,24 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
-/// Thrown when a ciphertext fails to decrypt — either genuinely tampered/
-/// corrupted in transit, or (more likely in practice) encrypted with a
-/// different key than the one being used to decrypt it, e.g. because the
-/// other participant's identity key has changed since the message was
-/// sent (a fresh install regenerates a fresh keypair — see
-/// docs/ENCRYPTION.md for why that's an accepted trade-off of never
-/// storing a plaintext key anywhere the server could recover it).
-/// Callers are expected to catch this and show a clear "can't decrypt
-/// this" placeholder rather than let it propagate as a crash.
+/// Thrown when a ciphertext fails to decrypt — tampered, or encrypted
+/// with a different key (e.g. the sender's identity key changed).
+/// Callers should show a "can't decrypt this" placeholder, not crash.
 class DecryptionFailedException implements Exception {
   const DecryptionFailedException();
 }
 
-/// True end-to-end encryption for message/media content: the
-/// server (see backend/src/services/message.service.js) only ever stores
-/// and relays opaque ciphertext it has no key to read.
+/// End-to-end encryption for message/media content — the server only
+/// ever stores and relays ciphertext it has no key to read.
 ///
-/// Algorithm choices:
-///  - **X25519** (Curve25519 Diffie-Hellman) for key agreement — every
-///    user has one long-term identity keypair, generated on-device the
-///    first time [SecureStorageService] has no stored private key yet;
-///    the private half never leaves the device.
-///  - **HKDF-SHA256** to turn the raw ECDH shared secret into a proper
-///    AES key, salted per-chat so a compromised derived key for one chat
-///    doesn't help derive another chat's key.
-///  - **AES-256-GCM** (authenticated encryption) for the actual message/
-///    media content — a tampered ciphertext fails to decrypt loudly (see
-///    [DecryptionFailedException]) instead of silently producing
-///    garbage.
+/// X25519 for key agreement (one long-term identity keypair per user,
+/// private half never leaves the device), HKDF-SHA256 to turn the ECDH
+/// secret into an AES key salted per chat, AES-256-GCM for the actual
+/// content (a tampered ciphertext fails loudly, not silently).
 ///
-/// Because this app's chats are always exactly two participants (see
-/// backend/migrations/…init-chats-tables.js — nothing here creates a
-/// group chat), a chat's encryption key never needs to be generated,
-/// distributed, or stored *anywhere at all*: both participants
-/// independently compute the identical key from (their own private key +
-/// the other's public key) via ECDH, which is symmetric — Alice's-priv ·
-/// Bob's-pub == Bob's-priv · Alice's-pub. Nothing about this key ever
-/// crosses the network or touches the database. See docs/ENCRYPTION.md
-/// for the full design writeup.
+/// A 1:1 chat's key is never stored anywhere: both sides independently
+/// derive the identical key via ECDH (Alice-priv · Bob-pub == Bob-priv
+/// · Alice-pub).
 class EncryptionService {
   EncryptionService({X25519? keyExchangeAlgorithm, AesGcm? cipher})
     : _keyExchange = keyExchangeAlgorithm ?? X25519(),
@@ -50,9 +29,6 @@ class EncryptionService {
   final X25519 _keyExchange;
   final AesGcm _cipher;
 
-  // Distinguishes this key derivation from any unrelated future use of
-  // HKDF in this codebase — standard practice for an HKDF "info" string,
-  // not a secret.
   static const _hkdfInfo = 'mobile-messenger-chat-key-v1';
   static const _nonceLength = 12;
   static const _macLength = 16;
@@ -60,9 +36,8 @@ class EncryptionService {
   /// A fresh long-term identity keypair.
   Future<SimpleKeyPair> generateIdentityKeyPair() => _keyExchange.newKeyPair();
 
-  /// Reconstructs a keypair from its stored private key bytes (the
-  /// "seed" — for X25519 this *is* the raw 32-byte private scalar, so
-  /// this is a cheap, purely-local operation, not a network round trip).
+  /// Reconstructs a keypair from its stored seed — a local, no-network
+  /// operation.
   Future<SimpleKeyPair> keyPairFromSeed(List<int> seed) =>
       _keyExchange.newKeyPairFromSeed(seed);
 
@@ -74,13 +49,9 @@ class EncryptionService {
     return base64Encode(publicKey.bytes);
   }
 
-  /// Derives this chat's AES-256-GCM key from my own identity keypair and
-  /// the other participant's public key — see the class doc comment for
-  /// why this never needs to be stored anywhere. Returns `null` if the
-  /// other participant hasn't registered a public key yet (an account
-  /// that predates this feature, or simply hasn't logged in since it
-  /// shipped) — callers are expected to treat that as "encryption isn't
-  /// available for this chat yet", not crash.
+  /// Derives this chat's AES-256-GCM key from my keypair and the
+  /// peer's public key. Returns null if the peer hasn't registered a
+  /// public key yet — callers treat that as "not available yet".
   Future<SecretKey?> deriveChatKey({
     required SimpleKeyPair myKeyPair,
     required String? peerPublicKeyBase64,
@@ -97,16 +68,12 @@ class EncryptionService {
     );
     return Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(
       secretKey: sharedSecret,
-      nonce: utf8.encode(chatId), // HKDF's "salt" param — per-chat, not secret
+      nonce: utf8.encode(chatId), // HKDF salt — per-chat, not secret
       info: utf8.encode(_hkdfInfo),
     );
   }
 
-  /// Encrypts UTF-8 text into a single base64 envelope — see
-  /// docs/ENCRYPTION.md for the wire format, mirrored exactly by
-  /// backend/src/utils/fieldCrypto.js on the server's own
-  /// encrypted-*at-rest* tier (profile bio), though the two features
-  /// never share a key.
+  /// Encrypts UTF-8 text into a single base64 envelope.
   Future<String> encryptText(SecretKey key, String plaintext) async {
     final bytes = await encryptBytes(key, utf8.encode(plaintext));
     return base64Encode(bytes);
@@ -117,10 +84,8 @@ class EncryptionService {
     return utf8.decode(bytes);
   }
 
-  /// Encrypts arbitrary bytes (an image/video file) — same algorithm,
-  /// same key; raw bytes out (nonce || ciphertext || tag) rather than
-  /// base64, since this goes straight into a multipart upload body, not
-  /// JSON.
+  /// Encrypts raw bytes (an image/video) — nonce || ciphertext || tag,
+  /// for a multipart upload body rather than JSON.
   Future<Uint8List> encryptBytes(SecretKey key, List<int> plaintext) async {
     final secretBox = await _cipher.encrypt(plaintext, secretKey: key);
     return secretBox.concatenation();
@@ -143,32 +108,18 @@ class EncryptionService {
     }
   }
 
-  // --- Group messaging ---------------------------------------------------
+  // --- Group messaging -----------------------------------------------
   //
-  // A 1:1 chat's single [deriveChatKey] result works because ECDH between
-  // exactly two people is symmetric (Alice-priv · Bob-pub == Bob-priv ·
-  // Alice-pub) — there's no equivalent single shared secret for three or
-  // more people without a real group key-agreement protocol (Signal's
-  // Sender Keys, MLS, …), which is well beyond this app's scope. Instead,
-  // a group message is encrypted once *per recipient*, each with that
-  // recipient's own pairwise [deriveChatKey] result (same chatId salt,
-  // so it's still a different key than any 1:1 chat the same two people
-  // might separately have) — the caller (`ChatDetailController`) is
-  // expected to include *every* current participant, itself included
-  // (see its own doc comment on why: without a self-entry, a device
-  // could never decrypt its own sent messages again after a reload).
-  //
-  // Text and media use the same wrap-per-recipient idea, just wrapping
-  // different things: text wraps the plaintext itself directly; media
-  // wraps a fresh one-time key instead (so the media bytes are only ever
-  // encrypted *once*, not once per recipient — real savings once a
-  // group's image/video messages are more than trivially sized).
+  // No single shared secret exists for 3+ people without a real group
+  // key-agreement protocol, so a group message is encrypted once per
+  // recipient with that recipient's own pairwise key (including a
+  // self-entry, so a device can still decrypt its own sent messages).
+  // Media wraps a fresh one-time key per recipient instead of
+  // re-encrypting the whole file for each one.
 
-  /// Encrypts [plaintext] once per entry in [recipientKeys] (participant
-  /// user id -> this device's pairwise key with them) and returns the
-  /// JSON-encoded `{userId: base64Envelope}` map — the wire format a
-  /// group text message's `body` is sent/stored as, in place of the
-  /// single envelope a 1:1 message's `body` is.
+  /// Encrypts [plaintext] once per entry in [recipientKeys] and returns
+  /// the JSON `{userId: base64Envelope}` map a group message's `body`
+  /// is sent/stored as.
   Future<String> encryptTextForRecipients(
     Map<String, SecretKey> recipientKeys,
     String plaintext,
@@ -180,16 +131,9 @@ class EncryptionService {
     return jsonEncode(envelopes);
   }
 
-  /// The inverse of [encryptTextForRecipients] — decrypts just
-  /// [myUserId]'s own entry, using [senderKey] (this device's pairwise
-  /// key with whoever sent the message — *not* necessarily any key of
-  /// mine, since the sender is the one who chose which key to encrypt
-  /// each entry with). Returns `null`, not a thrown exception, when the
-  /// map simply has no entry for [myUserId] at all — e.g. a message sent
-  /// before this device joined the group, which was never wrapped for
-  /// it in the first place; that's an expected case, distinct from
-  /// [DecryptionFailedException] (an entry that exists but doesn't
-  /// decrypt with the key given).
+  /// Decrypts just [myUserId]'s entry with [senderKey]. Returns null
+  /// (not an exception) if there's no entry at all — e.g. a message
+  /// sent before this device joined the group.
   Future<String?> decryptTextForRecipient({
     required String envelopeMapJson,
     required String myUserId,
@@ -200,14 +144,10 @@ class EncryptionService {
     return decryptText(senderKey, envelope);
   }
 
-  /// The media equivalent of [encryptTextForRecipients]: generates a
-  /// fresh one-time key, encrypts [plaintext] (the actual image/video/
-  /// audio bytes) with it exactly once, and separately wraps *that* key
-  /// once per recipient the same way a text body's plaintext is wrapped
-  /// directly. [encryptedBytes] is what gets uploaded as the message's
-  /// media; [wrappedKeysJson] is what rides along as the message's
-  /// `body` (otherwise unused for a media message) so each recipient can
-  /// recover the one-time key and, in turn, the media itself.
+  /// Media version of [encryptTextForRecipients]: generates a one-time
+  /// key, encrypts the media once with it, then wraps that key once
+  /// per recipient. [encryptedBytes] gets uploaded; [wrappedKeysJson]
+  /// rides along as the message body.
   Future<({Uint8List encryptedBytes, String wrappedKeysJson})>
   encryptMediaForRecipients(
     Map<String, SecretKey> recipientKeys,
@@ -228,13 +168,9 @@ class EncryptionService {
     );
   }
 
-  /// The inverse of [encryptMediaForRecipients]'s key-wrapping half —
-  /// recovers the one-time media key bytes from [myUserId]'s own entry
-  /// in the wrapped-keys map, decrypted with [senderKey]. The caller
-  /// (`chat_media_content.dart`) turns the result into a [SecretKey] via
-  /// `SecretKeyData` and uses *that* — not [senderKey] — to decrypt the
-  /// downloaded media bytes. Same "missing entry is `null`, not an
-  /// exception" contract as [decryptTextForRecipient].
+  /// Recovers the one-time media key from [myUserId]'s entry, decrypted
+  /// with [senderKey]. Same null-if-missing contract as
+  /// [decryptTextForRecipient].
   Future<Uint8List?> unwrapMediaKeyBytes({
     required String wrappedKeysJson,
     required String myUserId,

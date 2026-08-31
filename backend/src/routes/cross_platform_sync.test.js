@@ -1,20 +1,7 @@
-// PHASE 13 — Cross-platform synchronization.
-//
-// The Mobile and Web clients are the same Dart codebase talking to the
-// same REST/Socket.IO API (see docs and every earlier phase's own
-// "shared backend/DB" constraint) — from this server's point of view
-// there is no such thing as "a mobile session" or "a web session" at
-// all, only a session: one row in `refresh_tokens` and, if connected,
-// one socket in a chat's room. So the most rigorous, reproducible way
-// to verify "Mobile ↔ Web sync" without a physical/emulated device
-// attached to this environment (see PHASE 13's own final report for
-// that limitation) is to prove the actual claim that distinction rests
-// on: that two fully independent, simultaneous login sessions for the
-// same account behave exactly like two different devices — each with
-// its own tokens, each with its own socket, neither able to affect the
-// other's login state, and both seeing the exact same synchronized
-// data. Every test below plays "Mobile" and "Web" as two such
-// sessions — scenario letters match the phase's own lettering.
+// Mobile and Web talk to the same API, so the server has no notion of
+// "a mobile session" vs "a web session" — just a session. These tests
+// confirm two simultaneous logins for the same account behave like two
+// separate devices: separate tokens, separate sockets, shared data.
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -57,11 +44,9 @@ async function login(credentials) {
   };
 }
 
-// A single account, logged in independently: two separate calls to
-// POST /auth/login, exactly what opening the Mobile app on a phone and
-// the Web app in a browser and signing in on each would actually do —
-// two unrelated `refresh_tokens` rows, two unrelated access tokens, for
-// the one same user.
+// One account, logged in twice — two separate POST /auth/login calls,
+// like signing in on both the phone app and the browser: two unrelated
+// refresh_tokens rows for the same user.
 async function registerAndLoginTwice(label) {
   const credentials = await register(label);
   const mobile = await login(credentials);
@@ -184,14 +169,11 @@ test('Scenario A — logging in on Mobile and Web simultaneously keeps both sess
   assert.equal(webMe.status, 200);
   assert.equal(mobileMe.body.user.id, mobile.id);
   assert.equal(webMe.body.user.id, web.id);
-  // Genuinely two independent sessions, not the same login handed back
-  // twice — each has its own *refresh* token (its own row in
-  // `refresh_tokens`, independently revocable; see Scenarios F/G). The
-  // short-lived *access* tokens aren't asserted distinct here: a JWT
-  // encodes only `{sub, iat, exp}` (see backend/src/utils/jwt.js), so
-  // two logins for the same user within the same second are expected
-  // to produce byte-identical access tokens — that's not a shared
-  // session, just a stateless token whose content happens to coincide.
+  // Genuinely two sessions, not the same login handed back twice —
+  // each has its own refresh token row. The short-lived access tokens
+  // aren't compared: a JWT only encodes {sub, iat, exp}, so two logins
+  // in the same second can produce byte-identical ones without sharing
+  // a session.
   assert.notEqual(mobile.refreshToken, web.refreshToken);
 });
 
@@ -246,8 +228,8 @@ test('Scenario D — editing and deleting a message syncs to every other session
 
   const webSocket = await connectSocket(web, port);
   try {
-    // Edit, sent from Mobile — Web must see it live, and a fresh fetch
-    // from Web must reflect it too (not just the socket push).
+    // Edit sent from Mobile — Web must see it live, and a fresh fetch
+    // must reflect it too.
     const webSeesEdit = waitForEvent(webSocket, 'message:edited');
     const editRes = await editMessage(mobile, chatId, messageId, 'corrected text');
     assert.equal(editRes.status, 200);
@@ -287,9 +269,8 @@ test('Scenario E — delivery and read state sync to every one of the sender\'s 
   const messageId = sendRes.body.message.id;
   assert.equal(sendRes.body.message.status, 'sent');
 
-  // Both of the sender's own sessions are watching — a receipt from the
-  // recipient (bob) should reach Mobile *and* Web, not just whichever
-  // session actually sent the message.
+  // Both of the sender's own sessions are watching — a receipt from
+  // bob should reach Mobile and Web, not just whichever one sent it.
   const mobileSocket = await connectSocket(mobile, port);
   const webSocket = await connectSocket(web, port);
   try {
@@ -330,13 +311,10 @@ test('Scenario F — logging out on Web leaves Mobile logged in', async () => {
   const mobileMe = await me(mobile);
   assert.equal(mobileMe.status, 200);
   const webMe = await me(web);
-  // The access token itself is short-lived and stateless (a JWT — see
-  // backend/src/utils/jwt.js), so it still *decodes* successfully for a
-  // little while after logout; what logout actually revokes is the
-  // *refresh* token, which is what a real client would immediately need
-  // once this short-lived access token expires. That's the meaningful
-  // assertion here, not `webMe`'s status (accurate right now, but not
-  // the property this scenario is actually about).
+  // The access token is stateless, so it still decodes for a while
+  // after logout — what logout actually revokes is the refresh token,
+  // which is what matters once the access token expires. That's the
+  // real assertion here, not webMe's status.
   assert.equal(webMe.status, 200);
   const refreshAfterLogout = await request(app)
     .post('/auth/refresh')
@@ -381,10 +359,8 @@ test('Scenario H — data survives a full restart (every prior session logged ou
   const third = await sendMessage(mobile, chatId, 'deleted across a restart');
   await deleteMessage(mobile, chatId, third.body.message.id);
 
-  // Every session this test (and its helpers) opened is logged out —
-  // nothing left in memory or in flight, the same state an app process
-  // being killed and relaunched would start from. A brand new login is
-  // the only way back in, exactly like reopening the app.
+  // Every session this test opened is logged out — the same state as
+  // the app being killed and relaunched. Only a fresh login gets back in.
   await Promise.all([logout(mobile), logout(web), logout(bob)]);
   const restarted = await login(credentials);
 
@@ -399,4 +375,32 @@ test('Scenario H — data survives a full restart (every prior session logged ou
   );
   assert.ok(deletedTombstone.deletedAt);
   assert.equal(deletedTombstone.body, null);
+});
+
+// Measures send-to-receive latency directly, isolated from the
+// registration/login/invitation setup the scenario tests above also
+// time. "Normal conditions" here means loopback to a local backend —
+// a real deployed network path would have different latency.
+test('message delivery latency is well under the 2-second target under normal (local) conditions', async () => {
+  const { mobile, web } = await registerAndLoginTwice('scenLatency');
+  const bob = await registerAndLoginOnce('scenLatencybob');
+  const chatId = await createAcceptedChat(mobile, bob);
+  const port = await listen();
+
+  const webSocket = await connectSocket(web, port);
+  try {
+    const startedAt = Date.now();
+    const webReceives = waitForEvent(webSocket, 'message:new');
+    await sendMessage(mobile, chatId, 'timing check');
+    await webReceives;
+    const elapsedMs = Date.now() - startedAt;
+
+    console.log(`Measured send-to-receive latency: ${elapsedMs}ms`);
+    assert.ok(
+      elapsedMs < 2000,
+      `expected delivery under 2000ms, took ${elapsedMs}ms`
+    );
+  } finally {
+    webSocket.close();
+  }
 });

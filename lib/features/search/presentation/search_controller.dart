@@ -6,26 +6,18 @@ import '../../../models/user.dart';
 import '../data/search_providers.dart';
 import '../data/search_repository.dart';
 
-/// `data([])` doubles as both "nothing typed yet" and "no matches found" —
-/// the screen tells those apart by looking at whether a query is
-/// currently entered (see SearchScreen), not by inventing a third state
-/// here.
+/// `data([])` doubles as both "nothing typed yet" and "no matches" —
+/// the screen tells those apart by whether a query is entered.
 class SearchController extends StateNotifier<AsyncValue<List<User>>> {
   SearchController(this._repository) : super(const AsyncValue.data([]));
 
   final SearchRepository _repository;
   Timer? _debounce;
 
-  // Guards against an older, slower request's result overwriting a
-  // newer one that already resolved (e.g. "al" resolves after "ali" if
-  // the network reorders them) — only the response matching the latest
-  // call is ever applied.
+  // Guards against an older, slower request overwriting a newer one.
   int _requestId = 0;
 
-  /// Called on every keystroke. Debounces network calls, and treats an
-  /// empty/whitespace-only query as "no search" rather than sending a
-  /// request the backend would just reject — an empty search failing
-  /// server-side should never surface as an error client-side.
+  /// Debounces network calls; an empty query means "no search".
   void onQueryChanged(String query) {
     _debounce?.cancel();
     final trimmed = query.trim();

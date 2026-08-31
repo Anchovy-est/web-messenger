@@ -102,11 +102,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('No chats yet.'), findsOneWidget);
 
-    // Simulates what a real tap does: `PushNotificationService`'s
-    // `chatIdToOpen` stream fires — real taps only ever reach it via
-    // `firebase_messaging`/`flutter_local_notifications` callbacks,
-    // neither of which resolves against a real plugin here (see
-    // `debugEmitChatIdToOpen`'s own doc comment).
+    // Simulates a real tap: `PushNotificationService`'s `chatIdToOpen`
+    // stream fires — real taps reach it via plugin callbacks that
+    // don't resolve against a real plugin here.
     container
         .read(pushNotificationServiceProvider)
         .debugEmitChatIdToOpen('chat-from-notification');

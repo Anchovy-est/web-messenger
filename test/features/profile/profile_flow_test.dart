@@ -178,18 +178,15 @@ void main() {
     expect(find.text('Username is required.'), findsOneWidget);
   });
 
-  // --- Push notifications toggle ---------------------------------------
+  // --- Push notifications toggle -----------------------------------------
   //
-  // This test environment has no Firebase project configured (see
-  // docs/PUSH_NOTIFICATIONS.md) — `PushNotificationService.isAvailable`
-  // is always false here, so a "turn on" attempt can never actually get
-  // a token, the same as a real device where the user declined the OS
-  // permission prompt. That's deliberately not a gap in this test suite:
-  // it's exactly the "avoid silent failures" case worth proving — the
-  // toggle shows an error and reverts, rather than silently claiming
-  // success it can't back up. "Turn off" has no such dependency (it
-  // just stops trying to use a token), so that direction genuinely
-  // succeeds here.
+  // No Firebase project is configured here, so
+  // `PushNotificationService.isAvailable` is always false — a "turn on"
+  // attempt can never get a token, same as a real device where the
+  // permission prompt was declined. That's the case worth proving: the
+  // toggle shows an error and reverts instead of claiming success it
+  // can't back up. "Turn off" has no such dependency, so it genuinely
+  // succeeds.
 
   testWidgets('notifications are on by default', (tester) async {
     await _pumpAuthenticatedApp(tester);
@@ -219,10 +216,9 @@ void main() {
         find.widgetWithText(SwitchListTile, 'Push notifications'),
       );
       expect(toggle.value, false);
-      // No real token exists in this environment (no Firebase — see
-      // this section's own comment above), so there was nothing to
-      // actually unregister; what matters is that turning it off never
-      // throws and the choice is reflected in the UI.
+      // No real token exists here, so there was nothing to actually
+      // unregister — what matters is turning it off never throws and
+      // the choice is reflected in the UI.
       expect(profileRepository.unregisteredTokens, isEmpty);
     },
   );
@@ -235,8 +231,8 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.person_outline));
       await tester.pumpAndSettle();
-      // Off, then attempt on — starting from off avoids relying on
-      // exactly how the default-enabled state's "on -> on" tap behaves.
+      // Off, then attempt on — avoids relying on the default-enabled
+      // state's own "on -> on" tap behavior.
       await tester.tap(
         find.widgetWithText(SwitchListTile, 'Push notifications'),
       );
@@ -272,9 +268,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(FloralBackground), findsOneWidget);
-    // The actual content underneath is still there and still
-    // functions — Floral is a decorative backdrop, not a replacement
-    // for the real screen.
+    // The content underneath still functions — Floral is a decorative
+    // backdrop, not a replacement for the real screen.
     expect(find.text('annab'), findsOneWidget);
 
     await tester.tap(find.text('Light'));
@@ -311,9 +306,9 @@ void main() {
 
     expect(storage.themeOption, 'floral');
 
-    // A fresh app instance reading the same (now-populated) storage —
-    // stands in for an app restart, since `SecureStorageService` is
-    // what's supposed to make this survive one.
+    // A fresh app instance reading the same storage — stands in for
+    // an app restart, since `SecureStorageService` is what makes this
+    // survive one.
     await tester.pumpWidget(
       ProviderScope(
         overrides: [

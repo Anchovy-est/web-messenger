@@ -16,12 +16,11 @@ const VERIFICATION_CODE_TTL = '30m';
 const PASSWORD_RESET_CODE_TTL = '15m';
 
 async function register({ username, email, password, displayName }) {
-  // Pre-checks give a specific, field-attributed error for the common
-  // case. The `lower(email)`/`lower(username)` unique indexes (see
-  // migrations/…init-users-table.js) are the actual correctness
-  // guarantee for the rare race between two concurrent registrations —
-  // if both pass this check, one insert below will hit a 23505 unique
-  // violation, which errorHandler.js turns into a generic 409.
+  // Gives a specific, field-attributed error for the common case. The
+  // unique indexes on email/username are the real guarantee for a
+  // race between two concurrent registrations — if both pass this
+  // check, one insert below hits a unique violation, turned into a
+  // generic 409 by errorHandler.js.
   const existingEmail = await userModel.findByEmail(email);
   if (existingEmail) {
     throw new ApiError(409, 'EMAIL_TAKEN', 'Email is already registered.');
@@ -41,8 +40,7 @@ async function register({ username, email, password, displayName }) {
   });
 
   // Best-effort: a broken mail transport shouldn't fail registration
-  // itself — the user can still request a new code via
-  // POST /auth/resend-verification.
+  // — the user can request a new code via resend-verification.
   try {
     await sendVerificationEmail(user);
   } catch (err) {
@@ -71,9 +69,9 @@ async function sendVerificationEmail(user) {
 
 async function verifyEmail({ email, code }) {
   const user = await userModel.findByEmail(email);
-  // Same error whether the account doesn't exist, is already verified
-  // via a different code, or the code is simply wrong/expired — avoids
-  // both account enumeration and leaking which specific check failed.
+  // Same error whether the account doesn't exist, is already
+  // verified, or the code is wrong/expired — avoids both account
+  // enumeration and leaking which check failed.
   const invalidCodeError = new ApiError(
     400,
     'INVALID_CODE',
@@ -98,16 +96,16 @@ async function verifyEmail({ email, code }) {
 
 async function resendVerificationEmail({ email }) {
   const user = await userModel.findByEmail(email);
-  // Always respond the same way regardless of whether the account exists
-  // or is already verified — the controller returns a generic 204
-  // either way, so this can't be used to probe for registered emails.
+  // Always responds the same way regardless of whether the account
+  // exists or is verified — the controller returns a generic 204
+  // either way, so this can't probe for registered emails.
   if (user && !user.email_verified_at) {
     await sendVerificationEmail(user);
   }
 }
 
-// Issues a fresh access + refresh token pair for a user and persists the
-// refresh token's hash so it can be looked up/revoked later.
+// Issues a fresh access + refresh token pair and persists the refresh
+// token's hash so it can be looked up/revoked later.
 async function issueSession(userId) {
   const accessToken = signAccessToken(userId);
   const rawRefreshToken = generateRefreshToken();
@@ -124,8 +122,8 @@ async function issueSession(userId) {
 
 async function login({ email, password }) {
   const user = await userModel.findByEmail(email);
-  // Same error for "no such user" and "wrong password" — distinguishing
-  // them lets an attacker enumerate registered emails.
+  // Same error for "no such user" and "wrong password" — otherwise
+  // this becomes an email-enumeration oracle.
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     throw new ApiError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.');
   }
@@ -140,10 +138,9 @@ async function refresh({ refreshToken }) {
     throw new ApiError(401, 'INVALID_REFRESH_TOKEN', 'Refresh token is invalid or expired.');
   }
 
-  // Rotate on every use: the presented token is revoked immediately and
-  // a new one issued, so a stolen-but-unused refresh token can only be
-  // replayed once before the legitimate client's next refresh fails —
-  // a signal that something is wrong, rather than silent indefinite reuse.
+  // Rotate on every use: the presented token is revoked immediately
+  // and a new one issued, so a stolen-but-unused token can only be
+  // replayed once before the real client's next refresh fails.
   await refreshTokenModel.revokeByHash(hashToken(refreshToken));
   return issueSession(existing.user_id);
 }
@@ -162,8 +159,8 @@ async function getCurrentUser(userId) {
 
 async function forgotPassword({ email }) {
   const user = await userModel.findByEmail(email);
-  // Always behave the same regardless of whether the account exists —
-  // otherwise this endpoint becomes an email-enumeration oracle.
+  // Always behaves the same regardless of whether the account exists,
+  // to avoid email enumeration.
   if (!user) return;
 
   const code = generateOtp();
@@ -200,9 +197,8 @@ async function resetPassword({ email, code, newPassword }) {
   await passwordResetTokenModel.markUsed(tokenRow.id);
   await userModel.updatePasswordHash(user.id, await hashPassword(newPassword));
 
-  // A password reset is a strong signal to end every existing session —
-  // if the reset was triggered because credentials leaked, an attacker's
-  // still-valid refresh token would otherwise survive the password change.
+  // A password reset ends every existing session — otherwise an
+  // attacker's still-valid refresh token would survive the change.
   await refreshTokenModel.revokeAllForUser(user.id);
 }
 

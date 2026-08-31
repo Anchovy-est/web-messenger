@@ -1,9 +1,7 @@
-// Detects an image's real format from its content (magic bytes), rather
-// than trusting the client-supplied filename or Content-Type header —
-// either of which a client can set to anything regardless of what the
-// file actually contains. This is the authoritative check; multer's
-// fileFilter (upload.js) is just a fast, early rejection for the common
-// case of an obviously-wrong declared type.
+// Detects an image's real format from its magic bytes rather than
+// trusting the client's filename or Content-Type. This is the
+// authoritative check; upload.js's fileFilter is just a fast early
+// rejection.
 function detectImageType(buffer) {
   if (
     buffer.length >= 3 &&

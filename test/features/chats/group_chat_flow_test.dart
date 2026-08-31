@@ -1,10 +1,8 @@
 // Group-chat-specific coverage for ChatDetailController/ChatDetailScreen
-// — the 1:1 case is covered exhaustively by chat_detail_flow_test.dart;
-// this file is specifically about the three things that only exist once
-// a chat has more than two participants: per-recipient message wrapping
-// (no single shared chat key the way a 1:1 chat has), sender-name
-// labels on incoming bubbles, and a device being able to read its own
-// past messages again after a reload.
+// — the 1:1 case is covered by chat_detail_flow_test.dart. This file is
+// about what only exists with more than two participants: per-recipient
+// message wrapping, sender-name labels, and reading past messages back
+// after a reload.
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
@@ -264,8 +262,8 @@ void main() {
     'my own previously-sent group message is still decryptable after a fresh load',
     (tester) async {
       // Simulates history loaded on a fresh app start — a message this
-      // device sent earlier, wrapped (including for itself) exactly the
-      // way `_attemptSend` does.
+      // device sent earlier, wrapped for itself the way `_attemptSend`
+      // does.
       final envelopeMap = await _crypto.encryptTextForRecipients({
         'me': _aliceSelfKey,
         'bob': _aliceBobKey,
@@ -288,6 +286,83 @@ void main() {
       expect(find.text('already sent this earlier'), findsOneWidget);
       // My own message never gets a sender-name label.
       expect(find.text('alice'), findsNothing);
+    },
+  );
+
+  // Confirms search also works in a group thread — messages from
+  // multiple senders, each decrypted with its own pairwise key.
+  testWidgets(
+    'searching finds and counts matches across messages from every sender in a group chat',
+    (tester) async {
+      final fromBob = await _crypto.encryptTextForRecipients({
+        'me': _aliceBobKey,
+      }, "let's leave at 9");
+      final fromCarol = await _crypto.encryptTextForRecipients({
+        'me': _aliceCarolKey,
+      }, 'hello from carol');
+      final fromMe = await _crypto.encryptTextForRecipients({
+        'me': _aliceSelfKey,
+        'bob': _aliceBobKey,
+        'carol': _aliceCarolKey,
+      }, 'hello everyone');
+
+      final repository = _FakeMessageRepository(
+        initialMessages: [
+          Message(
+            id: 'm1',
+            chatId: _chatId,
+            senderId: 'bob',
+            type: 'text',
+            body: fromBob,
+            createdAt: DateTime(2026, 1, 1, 9),
+            status: MessageStatus.read,
+          ),
+          Message(
+            id: 'm2',
+            chatId: _chatId,
+            senderId: 'carol',
+            type: 'text',
+            body: fromCarol,
+            createdAt: DateTime(2026, 1, 1, 10),
+            status: MessageStatus.read,
+          ),
+          Message(
+            id: 'm3',
+            chatId: _chatId,
+            senderId: 'me',
+            type: 'text',
+            body: fromMe,
+            createdAt: DateTime(2026, 1, 1, 11),
+            status: MessageStatus.sent,
+          ),
+        ],
+      );
+      await _pumpGroupChatDetail(tester, messageRepository: repository);
+      // Everything's decrypted and on screen before search starts.
+      expect(find.text("let's leave at 9"), findsOneWidget);
+      expect(find.text('hello from carol'), findsOneWidget);
+      expect(find.text('hello everyone'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      final searchField = find.ancestor(
+        of: find.text('Search in this chat'),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(searchField, 'hello');
+      await tester.pumpAndSettle();
+
+      // carol's and my own message both contain "hello" — bob's doesn't.
+      expect(find.text('2/2'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_up)); // previous
+      await tester.pumpAndSettle();
+      expect(find.text('1/2'), findsOneWidget);
+
+      // A term only bob used still matches correctly too.
+      await tester.enterText(searchField, "leave at 9");
+      await tester.pumpAndSettle();
+      expect(find.text('1/1'), findsOneWidget);
     },
   );
 }

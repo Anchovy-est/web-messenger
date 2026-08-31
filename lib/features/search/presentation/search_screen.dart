@@ -18,12 +18,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
-  // Capped to match the backend's limit (see
-  // backend/src/schemas/user.schema.js `searchQuerySchema`) so a query
-  // that's "too long" per the API can't actually be typed — the invalid-
-  // input case is still fully covered server-side (see
-  // backend/src/routes/user.search.test.js), this just prevents it from
-  // ever being reachable through this screen.
+  // Matches the backend's own limit.
   static const _maxQueryLength = 100;
 
   @override
@@ -122,16 +117,10 @@ class _SearchResultTileState extends ConsumerState<_SearchResultTile> {
         SnackBar(content: Text('Invitation sent to ${widget.user.username}.')),
       );
     } catch (e) {
-      // Not just `on ApiException` — without this, an unforeseen
-      // failure would leave `_status` stuck at `sending` forever: a
-      // permanently spinning, permanently disabled "Invite" button on
-      // this tile with no way to try again short of leaving and
-      // re-searching.
+      // Broad catch — an unforeseen failure must still reset `_status`,
+      // not leave the button stuck spinning forever.
       if (!mounted) return;
       setState(() => _status = _InviteStatus.idle);
-      // ALREADY_IN_CHAT / INVITATION_ALREADY_PENDING both explain
-      // themselves via e.message — this doesn't navigate to the existing
-      // chat, so a snackbar is the full treatment for now.
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(errorMessageFor(e))));

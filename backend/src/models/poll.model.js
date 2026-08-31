@@ -1,23 +1,17 @@
 // Data-access layer for `polls` / `poll_options` / `poll_votes`.
-// Authorization (is this user even a participant of the poll's chat, is
-// this a group chat at all) is enforced one layer up, in
-// poll.service.js — this file trusts the ids it's given, same division
-// of responsibility as message.model.js.
+// Authorization is enforced one layer up, in poll.service.js — this
+// file trusts the ids it's given, same as message.model.js.
 const { query, withTransaction } = require('../config/db');
 
-// Every option, with its live vote count and (for a non-anonymous poll)
-// exactly who voted for it — computed for every poll row regardless of
-// `is_anonymous`, and stripped by `toPublicPoll` below before it ever
-// reaches JSON. Keeping the stripping in JS rather than branching this
-// SQL is deliberate: it's the one place that has to be *correct* for the
-// "don't expose individual vote identity for an anonymous poll" rule to
-// actually hold, and a plain `if` is far easier to audit than a buried
-// SQL CASE would be.
+// Every option, with its live vote count and (for a non-anonymous
+// poll) who voted for it — computed regardless of `is_anonymous`,
+// then stripped by `toPublicPoll` below. Stripping in JS rather than
+// branching the SQL keeps the "don't expose votes on an anonymous
+// poll" rule in one easy-to-audit place.
 //
-// `mv` (my vote) is this row's viewer's own current choice, if any —
-// always populated for the viewer themselves, anonymous poll or not:
-// showing someone their own vote back isn't "exposing vote identity",
-// it's just their own choice.
+// `mv` (my vote) is the viewer's own current choice, always
+// populated whether the poll is anonymous or not — showing someone
+// their own vote isn't an anonymity leak.
 const POLL_SELECT = `
   SELECT
     p.id, p.message_id, p.chat_id, p.creator_id, p.question, p.is_anonymous, p.created_at,
@@ -75,15 +69,14 @@ function toPublicPoll(row) {
     createdAt: row.created_at,
     totalVotes,
     options,
-    // This viewer's own current choice, or null if they haven't voted
-    // (or already retracted). Always present — see the POLL_SELECT doc
-    // comment above for why this isn't itself an anonymity leak.
+    // This viewer's own choice, or null if they haven't voted (or
+    // retracted). Not an anonymity leak — see POLL_SELECT above.
     myVoteOptionId: row.my_vote_option_id,
   };
 }
 
-// `options` is an ordered array of option text — `position` is just its
-// index, so callers never have to track it themselves.
+// `options` is an ordered array of option text — `position` is just
+// its index, so callers never track it themselves.
 async function createPoll({ messageId, chatId, creatorId, question, options, isAnonymous }) {
   const pollId = await withTransaction(async (client) => {
     const pollResult = await client.query(
@@ -114,12 +107,10 @@ async function findByMessageId(messageId, viewerUserId) {
   return toPublicPoll(result.rows[0]);
 }
 
-// Casts, or changes, `userId`'s vote — a single UPSERT either way, since
-// `poll_votes`'s primary key is (poll_id, user_id), not (poll_id,
-// option_id, user_id): there is only ever at most one row per user per
-// poll to begin with, so "vote" and "change vote" are the same
-// operation from the database's point of view. Caller (poll.service.js)
-// has already verified `optionId` actually belongs to `pollId`.
+// Casts or changes a vote — one UPSERT either way, since
+// (poll_id, user_id) is the primary key: there's only ever one row
+// per user per poll. Caller has already checked `optionId` belongs to
+// `pollId`.
 async function vote(pollId, optionId, userId) {
   await query(
     `INSERT INTO poll_votes (poll_id, option_id, user_id)
@@ -131,9 +122,8 @@ async function vote(pollId, optionId, userId) {
   );
 }
 
-// Idempotent — deleting a vote that doesn't exist (already retracted,
-// or never cast) simply affects zero rows rather than erroring; the
-// caller doesn't need to check first.
+// Idempotent — retracting a vote that doesn't exist just affects zero
+// rows instead of erroring.
 async function retractVote(pollId, userId) {
   await query(`DELETE FROM poll_votes WHERE poll_id = $1 AND user_id = $2`, [pollId, userId]);
 }

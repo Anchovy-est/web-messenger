@@ -4,13 +4,8 @@ import 'dart:typed_data';
 import 'package:video_player/video_player.dart';
 import 'package:web/web.dart' as web;
 
-/// Web half of `video_bytes_source.dart`'s conditional export —
-/// `dart:io`/`path_provider` have no real filesystem to write a temp
-/// file to on Web (see this app's other platform-conditional media
-/// helpers), so instead this wraps the decrypted bytes in a [web.Blob]
-/// and plays them via the `blob:` object URL that yields, through
-/// [VideoPlayerController.networkUrl] — the one video-player constructor
-/// that works on every platform, browsers included.
+/// Web: no filesystem, so this wraps the bytes in a [web.Blob] and
+/// plays them via the resulting `blob:` object URL.
 class PlatformVideoBytesSource {
   PlatformVideoBytesSource._(this.controller, this._objectUrl);
 
@@ -27,9 +22,7 @@ class PlatformVideoBytesSource {
     return PlatformVideoBytesSource._(controller, objectUrl);
   }
 
-  /// Revokes the object URL so the browser can free the underlying
-  /// Blob — the Web equivalent of deleting the temp file the mobile/
-  /// desktop implementation writes.
+  /// Revokes the object URL so the browser can free the Blob.
   Future<void> cleanup() async {
     web.URL.revokeObjectURL(_objectUrl);
   }

@@ -1,7 +1,7 @@
-// Data-access layer for `users`. Nothing in here knows about HTTP or
-// business rules (e.g. "is this email already taken") — that lives in
-// auth.service.js. Keeping the two separate means the validation logic is
-// testable without a database, and the SQL is testable without Express.
+// Data-access layer for `users`. Business rules (e.g. "is this email
+// already taken") live in auth.service.js, not here — keeping the two
+// separate makes validation testable without a database, and SQL
+// testable without Express.
 const { query } = require('../config/db');
 const { encryptField, decryptField } = require('../utils/fieldCrypto');
 
@@ -41,13 +41,10 @@ async function markEmailVerified(userId) {
   return result.rows[0] || null;
 }
 
-// Both fields are always supplied together by the profile edit screen,
-// so this replaces both rather than doing a partial COALESCE-style
-// update — simpler to reason about, no risk of an omitted field being
-// silently left as `undefined` in the query params. `bio` is encrypted
-// at rest (see utils/fieldCrypto.js); an empty string encrypts to a
-// real (short) envelope rather than being stored as an empty string, so
-// even "no bio set" doesn't leak length information as plaintext.
+// Both fields always come together from the profile edit screen, so
+// this replaces both rather than doing a partial update. `bio` is
+// encrypted at rest — even an empty bio encrypts to a real envelope,
+// so "no bio" doesn't leak length as plaintext.
 async function updateProfile(userId, { username, bio }) {
   const result = await query(
     `UPDATE users SET username = $1, bio = $2, updated_at = now()
@@ -58,13 +55,10 @@ async function updateProfile(userId, { username, bio }) {
   return result.rows[0] || null;
 }
 
-// Registers/replaces this user's long-term X25519 identity public key,
-// used for end-to-end message/media encryption. Plain text column — a
-// public key isn't sensitive, that's the point of asymmetric crypto —
-// so this is the one "key" in this whole feature that's fine to store
-// as-is. Idempotent: a client calls this on every login/session restore
-// where it doesn't already have this exact key cached, so overwriting
-// with the same value is a normal no-op case, not an error.
+// Registers/replaces this user's X25519 identity public key, used for
+// end-to-end encryption. Stored in plain text — a public key isn't
+// sensitive. Idempotent: the client calls this on every login where
+// it doesn't already have this exact key cached.
 async function updatePublicKey(userId, publicKey) {
   const result = await query(
     `UPDATE users SET public_key = $1, updated_at = now()
@@ -85,18 +79,15 @@ async function updateAvatarUrl(userId, avatarUrl) {
   return result.rows[0] || null;
 }
 
-// `%` and `_` are wildcards in SQL LIKE — without escaping them, a user
-// searching for a literal "%" would match every username, and "_" would
-// match any single character. Backslash-escape them so the search term
+// `%` and `_` are SQL LIKE wildcards — escape them so a search term
 // is always treated as literal text.
 function escapeLikePattern(input) {
   return input.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
-// Username matches anywhere in the string (like most apps' user search);
-// email requires an exact match, since partial email matching would let
-// someone harvest addresses by guessing substrings. The searching user
-// is always excluded from their own results.
+// Username matches anywhere in the string; email requires an exact
+// match, so partial email search can't be used to harvest addresses.
+// The searching user is always excluded from their own results.
 async function searchUsers({ searchTerm, excludeUserId, limit = 20 }) {
   const likePattern = `%${escapeLikePattern(searchTerm)}%`;
   const result = await query(
@@ -130,14 +121,9 @@ async function createUser({ username, email, passwordHash, displayName }) {
   return result.rows[0];
 }
 
-// Strips `password_hash` (and anything else not meant for API responses)
-// from a raw `users` row, and decrypts `bio` (see utils/fieldCrypto.js)
-// back to plaintext for the one legitimate reader:
-// the API response going to an authenticated, authorized caller. Always
-// send user data through this before it reaches a response body — this
-// is the single point where the at-rest ciphertext ever becomes
-// plaintext again, mirroring `password_hash` never leaving this file in
-// the first place.
+// Strips password_hash and anything else not meant for API responses,
+// and decrypts `bio` back to plaintext. Always send user data through
+// this before it reaches a response body.
 function toPublicUser(row) {
   if (!row) return null;
   return {

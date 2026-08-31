@@ -13,9 +13,8 @@ async function sendInvitation(inviterId, inviteeId) {
     throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
   }
 
-  // The requirement this app enforces: if you're already in a chat
-  // together, no invitation is needed — send the client straight there
-  // instead of letting them create a redundant one.
+  // If they're already in a chat together, send the client there
+  // instead of letting them create a redundant invitation.
   const existingChat = await chatModel.findDirectChatBetween(inviterId, inviteeId);
   if (existingChat) {
     throw new ApiError(
@@ -36,27 +35,20 @@ async function sendInvitation(inviterId, inviteeId) {
     );
   }
 
-  // The chat exists from the moment the invitation is sent — the inviter
-  // is a participant immediately; the invitee only joins on acceptance
-  // (see migrations/…init-chat-invitations-table.js for the reasoning).
+  // The chat exists from the moment the invitation is sent — the
+  // inviter is a participant immediately; the invitee joins on accept.
   const chat = await chatModel.createChat({ isGroup: false, createdBy: inviterId });
   await chatModel.addParticipant(chat.id, inviterId);
 
   return invitationModel.create({ chatId: chat.id, inviterId, inviteeId });
 }
 
-// Invites someone to an *existing* chat — used both by
-// chat.service.js `createGroupChat` (inviting each initially-selected
-// participant to the group chat it just created) and by the standalone
-// "invite one more person" endpoint on an existing group. Deliberately a
-// separate function from [sendInvitation] above rather than a shared
-// one with branches: [sendInvitation] always creates a brand-new 1:1
-// chat and enforces 1:1-only rules (at most one chat, at most one
-// pending invitation, between any given pair of people); this enforces
-// the group-appropriate versions of those same rules — scoped to *this*
-// chat, since unlike a 1:1 relationship, the same two people can
-// legitimately be in several different group chats together, or have
-// more than one pending group invitation between them at once.
+// Invites someone to an existing chat — used both for the initial
+// group-chat invitees and the standalone "invite one more person"
+// endpoint. Kept separate from sendInvitation, which always creates a
+// new 1:1 chat and enforces 1:1-only rules; this enforces the
+// group-appropriate versions of those rules, scoped to one chat, since
+// the same two people can legitimately share several group chats.
 async function inviteToChat(inviterId, chatId, inviteeId) {
   if (inviterId === inviteeId) {
     throw new ApiError(400, 'CANNOT_INVITE_SELF', 'You cannot invite yourself.');
@@ -64,9 +56,7 @@ async function inviteToChat(inviterId, chatId, inviteeId) {
 
   const chat = await chatModel.findByIdForUser(chatId, inviterId);
   if (!chat) {
-    // Same 404-hides-existence reasoning as chat.service.js `getChat` —
-    // a non-participant can't probe for a chat's existence by trying to
-    // invite someone to it.
+    // Same 404-hides-existence reasoning as chat.service.js's getChat.
     throw new ApiError(404, 'CHAT_NOT_FOUND', 'Chat not found.');
   }
   if (!chat.isGroup) {

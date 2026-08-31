@@ -90,10 +90,8 @@ test('POST /auth/register rejects a weak password with 400 VALIDATION_ERROR', as
   assert.ok(res.body.error.details.some((d) => d.field === 'password'));
 });
 
-// Each of these satisfies every rule *except* the one it's named for,
-// pinning down that the strength check actually enforces all five —
-// not just "8+ chars and some letter/digit", which is all it used to
-// check (see git history on auth.schema.js).
+// Each of these satisfies every rule except the one it's named for,
+// pinning down that the strength check enforces all five.
 const weakPasswords = {
   'too short': 'Sh0rt!1',
   'no lowercase letter': 'ALLUPPER123!',

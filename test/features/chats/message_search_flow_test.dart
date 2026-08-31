@@ -1,8 +1,7 @@
-// Coverage for the in-chat message search bar added in Phase 9 — see
-// MessageSearchController's class doc comment for why this has to be
-// entirely client-side (searching only text this device has already
-// decrypted), unlike server-side search a non-E2EE app could offer.
-// The crypto/decrypt scaffolding here mirrors chat_detail_flow_test.dart.
+// Coverage for the in-chat message search bar. Search runs entirely
+// client-side, over text this device has already decrypted — see
+// MessageSearchController for why. Crypto/decrypt setup here mirrors
+// chat_detail_flow_test.dart.
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
@@ -131,9 +130,9 @@ class _NoopSocketService extends SocketService {
   void emitTyping(String chatId, bool isTyping) {}
 }
 
-/// [body] is looked up in [_encryptedBody] (populated by [_prepareCrypto])
-/// so call sites stay plain literals while the controller still decrypts
-/// real ciphertext, same as chat_detail_flow_test.dart's `_message`.
+/// [body] is looked up in [_encryptedBody] so call sites stay plain
+/// literals while the controller still decrypts real ciphertext, same
+/// as chat_detail_flow_test.dart's `_message`.
 Message _message({
   required String id,
   required String senderId,

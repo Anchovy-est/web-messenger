@@ -5,22 +5,15 @@ import '../../../models/message.dart';
 import '../../../models/poll.dart';
 import '../../../services/api_client.dart';
 
-/// Talks to `/chats/:id/polls`. Unlike [MessageRepository], nothing that
-/// crosses this boundary is end-to-end encrypted — a poll's question and
-/// options are ordinary server-readable text; see [Poll]'s class doc
-/// comment for why. This repository doesn't know or care about that
-/// distinction, though; it's just a dumb transport layer, same as every
-/// other repository in this app.
+/// Talks to `/chats/:id/polls`. Unlike message bodies, a poll's
+/// question/options aren't end-to-end encrypted — see [Poll].
 class PollRepository {
   PollRepository(this._apiClient);
 
   final ApiClient _apiClient;
 
-  /// Creates a poll in a group chat — it comes back as a new [Message]
-  /// (`type: 'poll'`) with [Message.poll] already attached, same shape
-  /// the message list itself would eventually show, so the caller
-  /// (`ChatDetailController.createPoll`) can append it straight to the
-  /// thread without a second round trip.
+  /// Creates a poll in a group chat — comes back as a new [Message]
+  /// with [Message.poll] already attached.
   Future<Message> createPoll(
     String chatId, {
     required String question,
@@ -46,8 +39,8 @@ class PollRepository {
     }
   }
 
-  /// Casts a first vote, or changes an existing one — the backend treats
-  /// both the same way (see backend/src/models/poll.model.js `vote`).
+  /// Casts a first vote, or changes an existing one — the backend
+  /// treats both the same way.
   Future<Poll> vote(String chatId, String pollId, String optionId) async {
     try {
       final response = await _apiClient.dio.post(

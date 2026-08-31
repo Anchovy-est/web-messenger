@@ -5,14 +5,9 @@ import '../../../widgets/loading_view.dart';
 import '../domain/session_state.dart';
 import 'session_controller.dart';
 
-/// Shown while [SessionController] is restoring a persisted session at
-/// app startup, for both of the two states that can mean: a plain
-/// loading spinner for `SessionStatus.unknown` (still checking — long
-/// enough to avoid a login-screen flash for someone who's already
-/// signed in), and a retryable error for `SessionStatus.restoreFailed`
-/// (a stored session exists, but the backend couldn't be reached to
-/// confirm it's still valid — see that status's own doc comment for why
-/// this is deliberately *not* the same as being logged out).
+/// Shown while [SessionController] restores a persisted session: a
+/// plain spinner while checking, or a retryable error if the backend
+/// couldn't be reached.
 class SplashScreen extends ConsumerWidget {
   const SplashScreen({super.key});
 
@@ -40,11 +35,7 @@ class SplashScreen extends ConsumerWidget {
                 style: TextStyle(fontSize: 16),
               ),
               const SizedBox(height: 4),
-              // The specific reason (e.g. "The service is temporarily
-              // unavailable." vs. a plain timeout) — see
-              // `SessionState.restoreFailedMessage`'s doc comment — with
-              // a generic fallback for the unlikely case this state was
-              // somehow reached without one.
+              // The specific reason, with a generic fallback.
               Text(
                 session.restoreFailedMessage ??
                     'Check your connection and try again.',

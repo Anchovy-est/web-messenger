@@ -24,20 +24,13 @@ class _MessengerAppState extends ConsumerState<MessengerApp> {
   void initState() {
     super.initState();
     final pushService = ref.read(pushNotificationServiceProvider);
-    // Subscribed *before* calling initialize() below — chatIdToOpen is a
-    // broadcast stream with no replay, so a tap-that-launched-the-app
-    // event (getInitialMessage, inside initialize()) would be silently
-    // dropped if this listener attached even one microtask later.
+    // Subscribe before initialize() so a launch-tap event isn't missed.
     _chatIdToOpenSubscription = pushService.chatIdToOpen.listen(_openChat);
     unawaited(pushService.initialize());
   }
 
   void _openChat(String chatId) {
-    // Reads the router fresh on every call (not cached) since
-    // appRouterProvider rebuilds — a whole new GoRouter instance — on
-    // every session status transition (see its own doc comment); a
-    // stale reference here could push onto a router that's no longer
-    // the one actually mounted.
+    // Read fresh each time — the router is rebuilt on session changes.
     ref.read(appRouterProvider).push('/chats/$chatId');
   }
 
@@ -50,8 +43,7 @@ class _MessengerAppState extends ConsumerState<MessengerApp> {
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(appRouterProvider);
-    // Side-effect-only provider — keeps "delivered" current for every
-    // chat, not just whichever one's screen happens to be open.
+    // Keeps "delivered" current for every chat, not just the open one.
     ref.watch(messageDeliveryAckProvider);
 
     final themeOption = ref.watch(themeControllerProvider);
@@ -64,20 +56,12 @@ class _MessengerAppState extends ConsumerState<MessengerApp> {
     return MaterialApp.router(
       title: 'Mobile Messenger',
       debugShowCheckedModeBanner: false,
-      // A single explicit theme, not `theme`/`darkTheme`/`ThemeMode.system`
-      // — [ThemeController] is the one place OS brightness is consulted
-      // (only as the *default*, before any explicit choice exists; see
-      // its own doc comment), so `MaterialApp` itself never needs to pick
-      // between two themes on its own.
+      // One explicit theme — ThemeController already picked it.
       theme: themeData,
       themeMode: ThemeMode.light,
       routerConfig: router,
-      // Wraps every screen's (now-transparent, in Floral — see
-      // `AppTheme.floral`) Scaffold in the decorative flower backdrop —
-      // one wrap point here, not something every screen has to opt into
-      // individually. Any other theme renders `child` completely
-      // unwrapped: no flowers, no trace of Floral, exactly as if this
-      // widget didn't exist.
+      // Wraps every screen in the decorative flower backdrop, Floral
+      // theme only.
       builder: (context, child) {
         final content = child ?? const SizedBox.shrink();
         if (themeOption != AppThemeOption.floral) return content;

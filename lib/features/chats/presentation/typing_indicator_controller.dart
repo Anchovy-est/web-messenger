@@ -5,19 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../models/typing_update.dart';
 import '../../../providers/core_providers.dart';
 
-/// Which other participant(s) in a chat are currently typing — a set of
-/// user ids, not just a bool, since a *group* chat can have more than
-/// one person typing at once and a stop event from one of them must
-/// never clear the indicator for the others still typing. For a 1:1
-/// chat this only ever holds 0 or 1 ids, so it behaves exactly like the
-/// bool this used to be. One instance per chat (keyed by chatId via
-/// `.family`), separate from [ChatDetailController] so a typing flicker
-/// never has to rebuild (or be rebuilt by) the message list.
-///
-/// A stop event removes just that one user from the set immediately; a
-/// start event adds them and also arms a per-user 5-second safety-net
-/// timer that removes them on its own, in case the matching stop event
-/// never arrives (app crash, connection drop, etc. on their end).
+/// Which other participants in a chat are currently typing — a set of
+/// user ids, since a group chat can have more than one at once. A stop
+/// event removes that user immediately; a start event also arms a
+/// 5-second safety-net timer in case the stop never arrives.
 class TypingIndicatorController extends StateNotifier<Set<String>> {
   TypingIndicatorController(this._ref, this._chatId) : super(const {}) {
     _subscription = _ref

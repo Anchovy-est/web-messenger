@@ -1,12 +1,10 @@
-// Data-access layer for `chat_invitations`. Every read here joins in
-// basic inviter/invitee info so the API layer never needs a second round
+// Data-access layer for `chat_invitations`. Every read joins in basic
+// inviter/invitee info so the API layer never needs a second round
 // trip just to say whose invitation this is.
 const { query } = require('../config/db');
 
-// Joins in the target chat's own `is_group`/`name` too — without that,
-// the client would have no way to tell "Alice wants to chat with you"
-// (a 1:1 invitation) apart from "Alice invited you to Weekend Trip" (a
-// group one) from the invitation payload alone.
+// Also joins in the target chat's is_group/name — otherwise the
+// client couldn't tell a 1:1 invitation apart from a group one.
 const SELECT_WITH_USERS = `
   SELECT
     ci.id, ci.chat_id, ci.status, ci.created_at, ci.responded_at,
@@ -64,11 +62,8 @@ async function findById(id) {
   return toPublicInvitation(result.rows[0]);
 }
 
-// Blocks sending a second invitation while one is already outstanding
-// between the same two people, regardless of who invited whom or which
-// chat it's attached to (each invitation gets its own chat_id, so the
-// DB's partial unique index on (chat_id, invitee_id) alone can't catch
-// this — see migrations/…init-chat-invitations-table.js).
+// Blocks a second invitation while one's already pending between the
+// same two people, regardless of who invited whom or which chat.
 async function findPendingBetween(userIdA, userIdB) {
   const result = await query(
     `${SELECT_WITH_USERS}
@@ -81,13 +76,10 @@ async function findPendingBetween(userIdA, userIdB) {
   return toPublicInvitation(result.rows[0]);
 }
 
-// The group-chat equivalent of [findPendingBetween] — scoped to one
-// specific chat rather than "anywhere between these two people", since
-// unlike a 1:1 relationship (singular by definition), the same two
-// people can legitimately share several different group chats at once,
-// each with its own independent invitation history. Used by
-// invitation.service.js `inviteToChat` to block re-inviting someone
-// who's already been invited to *this* group and hasn't responded yet.
+// Group-chat equivalent of findPendingBetween, scoped to one chat —
+// the same two people can share several group chats, each with its
+// own invitation history. Blocks re-inviting someone already invited
+// to this group who hasn't responded yet.
 async function findPendingForChat(chatId, inviteeId) {
   const result = await query(
     `${SELECT_WITH_USERS}

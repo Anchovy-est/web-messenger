@@ -14,13 +14,10 @@ const username = z
 
 const email = z.string().trim().toLowerCase().email('Enter a valid email address.');
 
-// bcrypt (and bcryptjs) silently truncate at 72 bytes, so cap the input
-// length there rather than let a long password be accepted but only
-// partially checked. The four character-class rules below mirror the
-// client's own validator (see lib/core/utils/password_rules.dart) — kept
-// in sync by hand since the two run in different languages, but this is
-// the actual enforcement: a client that skipped/bypassed its own check
-// still can't register or reset a password that doesn't meet it.
+// bcrypt truncates at 72 bytes, so cap the length there instead of
+// silently checking only part of a longer password. The character-class
+// rules mirror the client's own validator, kept in sync by hand — this
+// is the real enforcement, regardless of what the client checks.
 const password = z
   .string()
   .min(8, 'Password must be at least 8 characters.')

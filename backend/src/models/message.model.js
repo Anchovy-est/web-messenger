@@ -1,25 +1,14 @@
-// Data-access layer for `messages` / `message_receipts`. Authorization (is
-// this user even a participant of the chat?) is enforced one layer up, in
-// message.service.js — this file trusts the chatId it's given.
+// Data-access layer for `messages` / `message_receipts`. Authorization
+// lives one layer up in message.service.js — this file trusts the
+// chatId it's given.
 const { query } = require('../config/db');
 
-// Status is an objective property of the message, not "as seen by the
-// caller": it's `delivered`/`read` only once *every* other participant
-// has it delivered/read, not just whichever one happens to be asking —
-// for a 1:1 chat that's exactly the one other person (this is exactly
-// the check this app has always done, just phrased as "all N of the
-// other participants" instead of hard-coding N=1), and for a group it's
-// everyone, matching how most group-chat apps show a single tick state
-// per message rather than a separate one per recipient. A recipient
-// with no `message_receipts` row yet (hasn't fetched/acked this message
-// at all) counts as "not delivered" for them, same as an explicit NULL
-// timestamp would.
+// Status is "delivered"/"read" only once every other participant has
+// it delivered/read, not just whichever one is asking. A recipient
+// with no receipt row yet counts as "not delivered".
 //
-// `deletedAt` is included in the public shape (unlike, say, an internal
-// audit column) because a deleted message doesn't disappear from a
-// chat — see `deleteMessage` below — it stays in place as a tombstone,
-// and the client needs `deletedAt` to know to render it as one instead
-// of showing its (now-nulled) body.
+// `deletedAt` is in the public shape because a deleted message stays
+// in the chat as a tombstone instead of disappearing.
 function toPublicMessage(row) {
   const status = row.recv_all_read ? 'read' : row.recv_all_delivered ? 'delivered' : 'sent';
   return {
@@ -51,20 +40,16 @@ const MESSAGE_SELECT = `
   ) recv ON true
 `;
 
-// Deliberately does *not* filter out soft-deleted messages — callers
-// (message.service.js) need to see a deleted message to correctly tell
-// "doesn't exist / not in this chat" (404) apart from "exists, but
-// already deleted" (also 404, checked explicitly via `deletedAt`) apart
-// from "exists, sender mismatch" (403). Filtering here would collapse
-// the second case into the first, silently.
+// Doesn't filter out soft-deleted messages — callers need to tell
+// "not found" apart from "found, but deleted" apart from "found, but
+// not yours".
 async function findById(id) {
   const result = await query(`${MESSAGE_SELECT} WHERE m.id = $1`, [id]);
   return result.rows[0] ? toPublicMessage(result.rows[0]) : null;
 }
 
-// `body` and `mediaUrl` are both nullable in practice: a text message
-// has a body and no mediaUrl; an image/video message has a mediaUrl and
-// no body — there's no caption support, by design.
+// `body`/`mediaUrl` are mutually exclusive in practice — no caption
+// support, by design.
 async function createMessage({ chatId, senderId, body = null, mediaUrl = null, type = 'text' }) {
   const result = await query(
     `INSERT INTO messages (chat_id, sender_id, type, body, media_url)
@@ -72,26 +57,16 @@ async function createMessage({ chatId, senderId, body = null, mediaUrl = null, t
      RETURNING id`,
     [chatId, senderId, type, body, mediaUrl]
   );
-  // A brand-new message never has a receipt row yet, so this could just
-  // build the public shape directly with status: 'sent' — going back
-  // through `findById` instead keeps `toPublicMessage`/`MESSAGE_SELECT` as
-  // the single source of truth for that shape, at the cost of one extra
-  // (indexed, cheap) query.
+  // A new message is always 'sent', but routing back through
+  // findById keeps toPublicMessage as the one source of truth.
   return findById(result.rows[0].id);
 }
 
-// Cursor pagination for "load earlier messages": `before` is a message id.
-// Without it, returns the most recent `limit` messages in the chat. With
-// it, returns the `limit` messages that precede that message. Either way
-// the result comes back oldest-first (ascending) — ready to render
-// top-to-bottom with new messages appended at the bottom, matching
-// `chat.model.js`'s ordering rule of "newest last".
+// Cursor pagination for "load earlier messages": `before` is a
+// message id. Result always comes back oldest-first.
 //
-// Deleted messages are included (as tombstones, body already nulled by
-// `softDeleteMessage`) rather than filtered out — a deleted message
-// needs an appropriate UI state, which means it stays in its place in
-// the conversation instead of vanishing and reflowing everything
-// around it.
+// Deleted messages stay in the list as tombstones instead of being
+// filtered out, so the conversation doesn't reflow around them.
 async function listForChat(chatId, { limit = 50, before } = {}) {
   const params = [chatId, limit];
   let cursorClause = '';
@@ -110,23 +85,14 @@ async function listForChat(chatId, { limit = 50, before } = {}) {
   return result.rows.reverse().map(toPublicMessage);
 }
 
-// Marks every message in `chatId` sent by someone other than `userId` as
-// delivered to `userId` (and, if `read` is true, also read) — `userId` is
-// always the *recipient* here, never the sender. Idempotent and
-// non-regressing: re-marking delivered never clears an existing read_at,
-// and re-marking read never resets an existing timestamp to "now".
+// Marks every message in `chatId` sent by someone other than `userId`
+// as delivered (and read, if requested) for `userId`. Idempotent: never
+// clears an existing read_at or resets a timestamp that's already set.
 //
-// Returns the ids of every message that's now, *as a whole* (see
-// `toPublicMessage`'s doc comment on why that means "every other
-// participant", not just `userId`), at least the requested status —
-// for a 1:1 chat that's the same thing as "did `userId`'s own ack just
-// reach that status", but for a group, one more person acking doesn't
-// necessarily flip the message's overall status yet if others still
-// haven't. Re-announcing an already-reached status is harmless for a
-// caller that just wants to push a status update, and saves tracking a
-// separate "what actually changed" set. The one exception: a
-// delivered-only pass excludes messages already (fully) read, so it
-// never reports a downgrade.
+// Returns the ids of messages that just reached that status *overall*
+// (every participant, not just this one) — for a 1:1 chat that's the
+// same as this ack, but in a group it may take more than one. A
+// delivered-only pass skips messages already fully read.
 async function markReceipt(chatId, userId, { read = false } = {}) {
   const upserted = await query(
     `INSERT INTO message_receipts (message_id, user_id, delivered_at, read_at)
@@ -147,10 +113,9 @@ async function markReceipt(chatId, userId, { read = false } = {}) {
     return { messageIds: [], status: read ? 'read' : 'delivered' };
   }
 
-  // Only re-checked for the messages this call actually touched — not
-  // every message in the chat — so a message that reached "all
-  // delivered"/"all read" earlier, via someone else's ack, isn't
-  // re-announced on every subsequent, unrelated markReceipt call.
+  // Only re-checks the messages this call touched, so a message that
+  // already reached its overall status via someone else's ack isn't
+  // re-announced every time.
   const aggregate = await query(
     `SELECT m.id AS message_id,
        bool_and(mr.delivered_at IS NOT NULL) AS all_delivered,
@@ -169,23 +134,16 @@ async function markReceipt(chatId, userId, { read = false } = {}) {
   return { messageIds, status: read ? 'read' : 'delivered' };
 }
 
-// Caller (message.service.js `editMessage`) has already verified this
-// message belongs to `id`'s sender and isn't deleted — this just does the
-// write and hands back the fresh public shape (including the `editedAt`
-// this call sets, and whatever status was already computed).
+// Caller has already checked ownership and that the message isn't
+// deleted — this just writes and returns the fresh public shape.
 async function updateMessageBody(id, body) {
   await query(`UPDATE messages SET body = $1, edited_at = now() WHERE id = $2`, [body, id]);
   return findById(id);
 }
 
-// Soft-delete: sets `deleted_at` and nulls the content columns rather
-// than removing the row. Nulling `body`/`media_url` — not just
-// setting the timestamp — means the original content isn't sitting
-// around retrievable from the database once "deleted"; the row survives
-// only as a tombstone (id, chat, sender, timestamps) so the conversation
-// keeps its shape instead of leaving a gap. Caller (message.service.js
-// `deleteMessage`) has already verified this message belongs to `id`'s
-// sender and isn't already deleted.
+// Soft-delete: sets deleted_at and nulls the content columns instead
+// of removing the row, so the conversation keeps its shape and no
+// deleted content lingers in the database.
 async function softDeleteMessage(id) {
   await query(
     `UPDATE messages SET deleted_at = now(), body = NULL, media_url = NULL WHERE id = $1`,

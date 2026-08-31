@@ -1,8 +1,7 @@
 import 'package:equatable/equatable.dart';
 
-/// Mirrors the public user shape returned by the backend
-/// (see backend/src/models/user.model.js `toPublicUser`) — never carries
-/// a password or anything else sensitive.
+/// The public user shape returned by the backend — never a password or
+/// anything else sensitive.
 class User extends Equatable {
   const User({
     required this.id,
@@ -23,12 +22,7 @@ class User extends Equatable {
   final String? bio;
   final bool emailVerified;
 
-  /// This account's end-to-end encryption public key, on whichever
-  /// device most recently registered one — see
-  /// lib/services/encryption_service.dart. Not used for anything on
-  /// *my own* [User] object client-side (I always use my own locally-held
-  /// private key directly); present here mainly because the backend
-  /// returns it on every user payload and it costs nothing to carry.
+  /// This account's end-to-end encryption public key.
   final String? publicKey;
 
   factory User.fromJson(Map<String, dynamic> json) {

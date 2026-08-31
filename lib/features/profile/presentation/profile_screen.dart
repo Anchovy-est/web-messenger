@@ -9,10 +9,7 @@ import '../../auth/presentation/session_controller.dart';
 import 'notification_settings_controller.dart';
 
 /// Displays the signed-in user's profile — reads straight from
-/// [SessionController] (populated at login / session-restore) rather than
-/// making its own network call, so it also demonstrates persistence
-/// across app restarts for free: restart the app, the session restores
-/// from the stored access token, and this screen shows the same data.
+/// [SessionController] rather than making its own network call.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
@@ -25,8 +22,7 @@ class ProfileScreen extends ConsumerWidget {
     final themeOption = ref.watch(themeControllerProvider);
 
     if (user == null) {
-      // Shouldn't happen — this route is only reachable when authenticated
-      // — but fail gracefully rather than crash on a null user.
+      // Shouldn't happen, but fail gracefully rather than crash.
       return const Scaffold(body: LoadingView());
     }
 
@@ -54,13 +50,7 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        // Centered and width-capped, same reasoning as the auth forms
-        // (see ResponsiveFormScaffold): below this width — every phone,
-        // this app's whole mobile experience — the constraint never
-        // binds, so this is pixel-identical to a plain full-width
-        // ListView there. On a wide desktop/web window it keeps this
-        // profile "card" from stretching edge-to-edge, which read as a
-        // stretched phone screen rather than a real desktop layout.
+        // Width-capped so this doesn't stretch edge-to-edge on desktop.
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),

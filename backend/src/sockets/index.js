@@ -1,14 +1,11 @@
-// Realtime layer entry point: message delivery, status updates, and
-// typing indicators. Persistence and authorization for messages still go
-// through the REST layer (message.controller.js) — this file's job is
-// just: authenticate the socket, put it in a room per chat it belongs
-// to, and let the REST layer broadcast into those rooms after it
-// persists something. Keeping "write" on REST and "push" on sockets
-// avoids duplicating validation/auth logic in two protocols.
+// Realtime layer: message delivery, status updates, typing
+// indicators. Persistence and authorization still go through the
+// REST layer (message.controller.js) — this file just authenticates
+// the socket, joins it to a room per chat, and lets REST broadcast
+// into those rooms after it persists something.
 //
-// Typing indicators are the one exception — by design they're never
-// persisted, so there's no REST counterpart at all; this file both
-// receives and broadcasts them directly.
+// Typing indicators are the exception — never persisted, so there's
+// no REST counterpart; this file both receives and broadcasts them.
 const { Server } = require('socket.io');
 const { verifyAccessToken } = require('../utils/jwt');
 const chatModel = require('../models/chat.model');
@@ -22,17 +19,10 @@ function attachSocketServer(httpServer) {
     cors: { origin: '*' },
   });
 
-  // Authenticates (mirrors `authenticate.js`'s REST middleware — same
-  // token, same verification, just read from the handshake instead of a
-  // header) *and* joins every chat room this user belongs to, both here
-  // in `io.use` rather than the `connection` handler below. That matters:
-  // middleware fully resolves before the client ever sees its own
-  // `connect` event, so by the time client code can possibly emit
-  // anything, room membership is already in place server-side. Doing the
-  // room join after `connection` instead (as an `async` step in that
-  // handler) leaves a window where a client that emits immediately on
-  // connect — exactly what a typing indicator does — races the join and
-  // gets silently dropped, since nothing’s listening/authorized yet.
+  // Auth and room-joining both happen here in `io.use`, not in the
+  // `connection` handler, so room membership is in place before the
+  // client can emit anything — a typing event sent right on connect
+  // would otherwise race the room join and get dropped.
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) {
@@ -47,11 +37,8 @@ function attachSocketServer(httpServer) {
     socket.userId = payload.sub;
 
     try {
-      // Every chat this user is currently in (archived or not) so a
-      // message lands in real time regardless of which screen — chat
-      // list or a specific chat — they're on. Not scoped to "chats the
-      // client has explicitly opened": that would miss messages arriving
-      // for chats the user hasn't navigated to yet in this session.
+      // Every chat this user is in, archived or not, so messages
+      // arrive in real time no matter which screen they're on.
       const chatIds = await chatModel.listChatIdsForUser(socket.userId);
       for (const chatId of chatIds) {
         socket.join(chatRoom(chatId));
@@ -66,12 +53,10 @@ function attachSocketServer(httpServer) {
   io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.id} (user ${socket.userId})`);
 
-    // Ephemeral, fire-and-forget: relayed to the rest of the chat's room
-    // (never back to the sender — `socket.to`, not `io.to`) and never
-    // written anywhere. Authorization reuses the room join from the auth
-    // middleware above instead of a DB round trip: a socket is only ever
-    // in `chatRoom(chatId)` if it belongs to a participant, so a stray
-    // event for a chat this socket never joined is silently dropped.
+    // Ephemeral, fire-and-forget — relayed to the rest of the room
+    // (never back to the sender) and never stored. Authorization
+    // reuses the room join from auth middleware: a stray event for a
+    // chat this socket never joined is silently dropped.
     socket.on('typing', (payload) => {
       const chatId = payload?.chatId;
       const isTyping = payload?.isTyping === true;

@@ -11,16 +11,11 @@ function notifyPush(message) {
     .catch((err) => console.error('Push notification failed:', err));
 }
 
-// A realtime `poll:updated` push is shared identically with everyone in
-// the chat's room, unlike a REST response, which only ever goes back to
-// the one caller who asked — so `myVoteOptionId` (this *viewer's* own
-// current choice) is stripped before it goes out. Broadcasting it as-is
-// would hand every other participant a snapshot of *whoever just voted's*
-// own choice mislabeled as their own — at best confusing, at worst a
-// real vote-identity leak on an anonymous poll. Each client already
-// knows its own vote from the REST response the vote/retract call
-// itself returned, and keeps that locally rather than trusting it to
-// ever come from a broadcast.
+// A realtime broadcast goes to everyone in the room identically, so
+// `myVoteOptionId` (this viewer's own choice) is stripped before it
+// goes out — otherwise every participant would see whoever-just-voted's
+// choice mislabeled as their own, a real leak on an anonymous poll.
+// Each client keeps its own vote from the REST response instead.
 function forBroadcast(poll) {
   const rest = { ...poll };
   delete rest.myVoteOptionId;

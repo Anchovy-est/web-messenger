@@ -1,24 +1,19 @@
 import 'package:mobile_messenger/services/secure_storage_service.dart';
 
-// A fixed, syntactically-valid X25519 seed (any 32 bytes is a valid
-// seed). Exported (not just [FakeSecureStorageService]'s
-// private default) so a test that needs to independently re-derive the
-// exact same chat key the controller under test computed — e.g. to decrypt
-// a "sent" ciphertext and assert on the real plaintext — can reconstruct
-// this same identity keypair via
+// A fixed, valid X25519 seed. Exported so a test that needs to
+// independently re-derive the same chat key the controller computed —
+// e.g. to decrypt a "sent" ciphertext and check the plaintext — can
+// reconstruct this identity keypair via
 // `EncryptionService().keyPairFromSeed(base64Decode(testIdentityPrivateKeySeed))`.
 const testIdentityPrivateKeySeed =
     'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
 
 /// In-memory stand-in for [SecureStorageService], for widget tests.
 ///
-/// [SecureStorageService] wraps a real platform channel
-/// (flutter_secure_storage), which isn't mocked in the widget-test
-/// environment — calling it directly hangs/throws instead of resolving,
-/// which is exactly what caused the app-boot smoke test to time out
-/// before this fake was introduced. Override `secureStorageServiceProvider`
-/// with this in any test that (transitively, via SessionController)
-/// touches it.
+/// [SecureStorageService] wraps a real platform channel, unmocked in
+/// the widget-test environment — calling it directly hangs/throws
+/// instead of resolving. Override `secureStorageServiceProvider` with
+/// this in any test that touches it, transitively via SessionController.
 class FakeSecureStorageService implements SecureStorageService {
   FakeSecureStorageService({
     this.accessToken,

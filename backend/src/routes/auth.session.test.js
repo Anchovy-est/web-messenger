@@ -107,14 +107,11 @@ test('POST /auth/logout revokes the refresh token so it can no longer be used', 
   assert.equal(refreshRes.body.error.code, 'INVALID_REFRESH_TOKEN');
 });
 
-// Mobile and Web are two independent clients logging into the same
-// account — nothing in this API distinguishes them by platform; the
-// independence instead comes from `login` issuing a brand new refresh
-// token every time (see auth.service.js `issueSession`) rather than
-// replacing whatever session already existed, and `logout` revoking only
-// the one token it was handed. This test is the regression guard for
-// that: two logins for the same account must behave as two fully
-// separate sessions, in both directions.
+// Nothing in this API distinguishes clients by platform — independence
+// comes from `login` always issuing a brand new refresh token instead
+// of replacing an existing session, and `logout` revoking only the
+// token it was handed. Regression guard: two logins for the same
+// account must behave as two fully separate sessions, both ways.
 test('logging in twice for the same account creates two independent sessions — logging out one does not affect the other', async () => {
   const username = `test_multisession_${runId}`.slice(0, 20);
   createdUsernames.push(username);
@@ -170,8 +167,8 @@ test('logging in twice for the same account creates two independent sessions —
   assert.equal(webRefreshAfterWebLogout.status, 401);
   assert.equal(webRefreshAfterWebLogout.body.error.code, 'INVALID_REFRESH_TOKEN');
 
-  // And the reverse: logging out Mobile (using its now-rotated refresh
-  // token from the refresh above) must not touch a fresh Web session.
+  // And the reverse: logging out Mobile must not touch a fresh Web
+  // session.
   const web2Login = await request(app).post('/auth/login').send({
     email: credentials.email,
     password: credentials.password,

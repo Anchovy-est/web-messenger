@@ -1,9 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-/// The other 1:1 participant in a chat — see backend/src/models/
-/// chat.model.js `toPublicChat`. Kept separate from the similarly-shaped
-/// `InvitationParticipant` since the two responses are independent and
-/// may diverge (e.g. online status only ever makes sense here).
+/// The other 1:1 participant in a chat.
 class ChatParticipant extends Equatable {
   const ChatParticipant({
     required this.id,
@@ -18,11 +15,8 @@ class ChatParticipant extends Equatable {
   final String displayName;
   final String? avatarUrl;
 
-  /// This participant's end-to-end encryption public key — see
-  /// `lib/services/encryption_service.dart`. Null until they've logged in
-  /// at least once and registered a key; a chat with a null key here
-  /// can't yet derive a shared key, so sending/decrypting degrades
-  /// gracefully rather than crashing (see `ChatDetailController`).
+  /// This participant's end-to-end encryption public key. Null until
+  /// they've registered one.
   final String? publicKey;
 
   factory ChatParticipant.fromJson(Map<String, dynamic> json) {
@@ -64,9 +58,8 @@ class LastMessagePreview extends Equatable {
     );
   }
 
-  /// [body] overrides the stored value when given — used by
-  /// `ChatListController` to swap this preview's encrypted `body` for
-  /// its decrypted plaintext.
+  /// [body] overrides the stored value when given — used to swap in the
+  /// decrypted plaintext.
   LastMessagePreview copyWith({String? body}) {
     return LastMessagePreview(
       id: id,
@@ -100,27 +93,14 @@ class Chat extends Equatable {
   final DateTime createdAt;
   final DateTime? archivedAt;
 
-  /// When this chat was muted *for the current user* — muting is
-  /// per-user, per-chat, same as archiving (see
-  /// backend/src/models/chat.model.js `setMuted`). Suppresses push
-  /// notifications only; the chat, its messages, and realtime socket
-  /// delivery are all unaffected — a muted chat still updates live if
-  /// it's open on screen.
+  /// When this chat was muted for the current user — suppresses push
+  /// notifications only.
   final DateTime? mutedAt;
 
-  /// Only ever set for a 1:1 chat — `null` for a group (see
-  /// [participants] instead). See backend/src/models/chat.model.js
-  /// `CHAT_SELECT`'s doc comment for why the two are deliberately kept
-  /// separate rather than [participants] becoming "the first of possibly
-  /// several" once a chat can have more than one other member.
+  /// Set only for a 1:1 chat — `null` for a group (see [participants]).
   final ChatParticipant? otherParticipant;
 
-  /// Only ever set for a group chat — every *other* participant (not
-  /// including the current user), `null` for a 1:1 chat. Used both to
-  /// render a group's member list and, per-participant `publicKey`, to
-  /// derive this device's pairwise end-to-end encryption key with each
-  /// of them (see `ChatDetailController` — a group has no single shared
-  /// chat key the way a 1:1 chat does).
+  /// Set only for a group chat — every other participant.
   final List<ChatParticipant>? participants;
 
   final LastMessagePreview? lastMessage;
@@ -128,23 +108,14 @@ class Chat extends Equatable {
   bool get isArchived => archivedAt != null;
   bool get isMuted => mutedAt != null;
 
-  /// What to show as the chat's title — a group's own name, or (for a
-  /// 1:1 chat) the other participant's name, derived client-side per the
-  /// backend's design (see migrations/…init-chats-tables.js).
+  /// A group's own name, or (1:1) the other participant's username.
   String displayName(String fallback) {
     if (isGroup) return name ?? fallback;
     return otherParticipant?.username ?? fallback;
   }
 
-  /// [lastMessage] overrides the stored value when given — used by
-  /// `ChatListController` to swap in a decrypted preview without
-  /// reconstructing every other field. [mutedAt]/[clearMutedAt] update
-  /// the mute state in place — used by [ChatListScreen]'s mute toggle to
-  /// update one chat's entry in an already-loaded list without a full
-  /// refetch. `mutedAt: null` (the default) means "leave it as it was",
-  /// same as every other field here — [clearMutedAt] is the explicit way
-  /// to actually set it back to null (unmute), since a plain nullable
-  /// parameter can't distinguish "no change" from "change to null".
+  /// Field overrides for in-place updates without refetching. `mutedAt:
+  /// null` means "leave as is"; use [clearMutedAt] to actually unmute.
   Chat copyWith({
     LastMessagePreview? lastMessage,
     DateTime? mutedAt,

@@ -1,16 +1,12 @@
 // Integration tests for image/video messages against a real Postgres
-// connection, the real filesystem (backend/uploads/messages), and a
-// real listening HTTP+socket.io server (for the realtime-broadcast
-// tests) — see auth.routes.test.js for how to run this suite.
+// connection, the real filesystem, and a real listening HTTP+socket.io
+// server.
 //
-// The uploaded file is always an opaque end-to-end-encrypted blob (the
-// real image/video bytes never reach the server — see
-// lib/services/encryption_service.dart), so these tests use arbitrary
-// "ciphertext-shaped" buffers rather than real JPEG/MP4 fixtures, and
-// assert the server stores/relays them byte-for-byte without being able
-// to (or trying to) inspect what's inside. The kind of media (image vs.
-// video) is a client-declared `type` form field instead of something
-// sniffed from magic bytes.
+// The uploaded file is always an opaque encrypted blob, so these tests
+// use arbitrary "ciphertext-shaped" buffers instead of real JPEG/MP4
+// fixtures, and check the server stores/relays them byte-for-byte
+// without inspecting what's inside. Media kind (image vs. video) is a
+// client-declared `type` field, not something sniffed from bytes.
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -39,10 +35,9 @@ function trackMediaUrl(res) {
   }
 }
 
-// Stand-ins for "an encrypted image/video blob" — what actually flows
-// over this endpoint post-Phase-20 is ciphertext, which is indistinguishable
-// from any other opaque byte sequence; there's no meaningful "valid
-// ciphertext" fixture to construct beyond "some bytes of the right size".
+// Stand-ins for "an encrypted image/video blob" — real traffic here is
+// ciphertext, indistinguishable from any other opaque bytes, so there's
+// no meaningful fixture beyond "some bytes of the right size".
 const ENCRYPTED_IMAGE_BLOB = Buffer.from('not-really-a-jpeg-just-ciphertext-bytes');
 const ENCRYPTED_VIDEO_BLOB = Buffer.from('not-really-an-mp4-either-also-ciphertext');
 const ENCRYPTED_AUDIO_BLOB = Buffer.from('not-really-an-m4a-either-also-ciphertext');
@@ -75,9 +70,8 @@ async function createAcceptedChat(inviter, invitee) {
   return sendRes.body.invitation.chatId;
 }
 
-// `type` rides alongside the file as a second multipart form field —
-// exactly what the Flutter client sends (see
-// lib/features/chats/data/message_repository.dart `sendMediaMessage`).
+// `type` rides alongside the file as a second multipart field, same
+// as the real client sends.
 function sendMedia(token, chatId, buffer, { filename, type }) {
   const req = request(app)
     .post(`/chats/${chatId}/messages/media`)
@@ -151,17 +145,15 @@ test('sending an encrypted image blob creates an image message with a stored med
   assert.equal(res.body.message.type, 'image');
   assert.equal(res.body.message.senderId, alice.id);
   assert.equal(res.body.message.body, null);
-  // A generic extension, not `.jpg` — the server never learns the real
-  // media type, only the client-declared `type` field (see the message
-  // itself, not the filename on disk).
+  // A generic extension, not `.jpg` — the server never learns the
+  // real media type, only the client-declared `type` field.
   assert.match(res.body.message.mediaUrl, /^\/uploads\/messages\/.+\.enc$/);
   trackMediaUrl(res);
 
   const staticRes = await request(app).get(res.body.message.mediaUrl);
   assert.equal(staticRes.status, 200);
-  // The server stores/serves the ciphertext byte-for-byte — it's opaque
-  // to the server, but must round-trip exactly for the recipient's
-  // client to be able to decrypt it.
+  // Opaque to the server, but must round-trip byte-for-byte so the
+  // recipient's client can decrypt it.
   assert.ok(Buffer.from(staticRes.body).equals(ENCRYPTED_IMAGE_BLOB));
 });
 

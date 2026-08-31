@@ -12,22 +12,14 @@ import '../../../widgets/user_avatar.dart';
 import '../../auth/presentation/session_controller.dart';
 import 'chat_list_controller.dart';
 
-/// The `extra` map every chat-tile tap hands to the `/chats/:id` route —
-/// pulled out so the mobile push (below) and the desktop shell's inline
-/// selection (see `AppShell`) build it identically from the same [Chat]
-/// instead of each re-deriving it.
+/// The `extra` map every chat-tile tap hands to the `/chats/:id` route.
 Map<String, dynamic> chatRouteExtra(Chat chat) => {
   'title': chat.displayName('Unknown'),
   'avatarUrl': chat.otherParticipant?.avatarUrl,
 };
 
-/// The app's real landing screen once signed in — the chat list. This is
-/// the full-screen phone experience: its own [AppBar] with the
-/// search/invitations/profile/logout actions, tapping a chat pushes
-/// [ChatDetailScreen] as a new full-screen route. On a wide (desktop/web)
-/// window, `AppShell` doesn't render this screen at all — it composes
-/// [ChatListBody] directly, side-by-side with the open chat, instead —
-/// so nothing here needs to know or care that a wider layout exists.
+/// The full-screen phone landing screen once signed in. On a wide
+/// window, `AppShell` composes [ChatListBody] directly instead.
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
 
@@ -96,18 +88,13 @@ class ChatListScreen extends ConsumerWidget {
   }
 }
 
-/// The `Tab`s shared by [ChatListScreen]'s `AppBar.bottom` (mobile) and
-/// `AppShell`'s own plain `TabBar` above [ChatListBody] on desktop — same
-/// two tabs either way, just mounted in a different chrome.
+/// Shared by [ChatListScreen]'s mobile `AppBar.bottom` and `AppShell`'s
+/// desktop `TabBar`.
 const chatListTabs = [Tab(text: 'Chats'), Tab(text: 'Archived')];
 
-/// The Active/Archived tabbed list of chats — every bit of this screen
-/// that isn't chrome (app bar, connection/verification banners), and so
-/// the one piece [ChatListScreen] (mobile, full screen) and the desktop
-/// shell's chat-list pane (see `AppShell`) both build on, instead of the
-/// list-rendering/archive logic existing twice. Must be used inside a
-/// `DefaultTabController(length: 2)` ancestor — neither of this widget's
-/// two call sites builds a `TabBarView` without also providing one.
+/// The Active/Archived tabbed list of chats — the part [ChatListScreen]
+/// and the desktop shell both build on. Needs a
+/// `DefaultTabController(length: 2)` ancestor.
 class ChatListBody extends StatelessWidget {
   const ChatListBody({
     super.key,
@@ -115,15 +102,12 @@ class ChatListBody extends StatelessWidget {
     this.selectedChatId,
   });
 
-  /// Called with the tapped [Chat] — mobile pushes `/chats/:id` as a new
-  /// full-screen route; the desktop shell instead just updates which chat
-  /// is shown in its already-visible detail pane (see `AppShell`).
+  /// Called with the tapped [Chat] — mobile pushes a route; desktop
+  /// updates its already-visible detail pane.
   final ValueChanged<Chat> onChatSelected;
 
-  /// The chat currently open in an adjacent detail pane, if any —
-  /// highlighted in the list so it's clear which conversation is showing.
-  /// Always `null` on mobile, where the list and the open chat are never
-  /// both on screen at once.
+  /// The chat currently open in an adjacent detail pane, for
+  /// highlighting. Always null on mobile.
   final String? selectedChatId;
 
   @override
@@ -161,11 +145,6 @@ class _ActiveTab extends ConsumerWidget {
             ref.read(activeChatsControllerProvider.notifier).refresh(),
       ),
       data: (chats) {
-        // Always wrapped in a RefreshIndicator, empty or not — a
-        // just-accepted invitation can leave a viewer stuck looking at
-        // an empty list with no visible action but a full app restart
-        // otherwise, since pull-to-refresh is the only refresh affordance
-        // this screen has (see _wrapRefreshable doc comment).
         return _wrapRefreshable(
           onRefresh: () =>
               ref.read(activeChatsControllerProvider.notifier).refresh(),
@@ -245,16 +224,11 @@ class _ArchivedTab extends ConsumerWidget {
   }
 }
 
-/// A `RefreshIndicator` needs a scrollable descendant to detect the pull
-/// gesture at all — `ListView.builder` already qualifies once there are
-/// items, but `EmptyStateView` (a bare `Center`) doesn't, which is
-/// exactly the gap that used to leave a viewer with an empty chat list
-/// and no way to pull-to-refresh it (e.g. right after accepting an
-/// invitation, before the new chat has loaded in) short of restarting
-/// the app. Wrapping every child — empty-state included — in a
-/// single-child `ListView` with `AlwaysScrollableScrollPhysics` gives it
-/// that scrollable, so the gesture works regardless of which child is
-/// showing.
+/// `RefreshIndicator` needs a scrollable descendant — `EmptyStateView`
+/// (a bare `Center`) doesn't qualify on its own, so pull-to-refresh
+/// would silently stop working on an empty list. Wrapping every child in
+/// a single-child scrollable `ListView` fixes that regardless of which
+/// child is showing.
 Widget _wrapRefreshable({
   required Future<void> Function() onRefresh,
   required Widget child,

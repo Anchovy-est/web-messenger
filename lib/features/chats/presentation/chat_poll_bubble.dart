@@ -1,17 +1,9 @@
 part of 'chat_detail_screen.dart';
 
-/// A poll message's body — question, options (each a tappable row with a
-/// live proportional bar and vote count), and a footer noting the total
-/// vote count and whether votes are public or anonymous. Rendered by
-/// `_MessageBubble._buildBody` for a `type: 'poll'` message, in place of
-/// the plain `Text` a text message gets.
-///
-/// Voting/changing/retracting are all the same gesture: tapping an
-/// option that isn't yet this device's own vote casts it (or, if
-/// something else was already selected, changes it to this one);
-/// tapping the option that *is* already this device's own vote retracts
-/// it. One row, one action — no separate "confirm"/"retract" button
-/// needed.
+/// A poll message's body — question, options with a live vote bar, and
+/// a footer noting the total and public/anonymous. Tapping an unselected
+/// option votes (or changes a vote); tapping the selected one retracts
+/// it.
 class _PollContent extends ConsumerStatefulWidget {
   const _PollContent({
     required this.message,
@@ -28,12 +20,8 @@ class _PollContent extends ConsumerStatefulWidget {
 }
 
 class _PollContentState extends ConsumerState<_PollContent> {
-  // Disables every option row for the duration of one vote/retract
-  // request — not per-option, since changing a vote touches two options
-  // at once (the old one loses a vote, the new one gains it) and this
-  // isn't optimistic (see `ChatDetailController.castVote`'s doc
-  // comment), so there's a real gap where neither option yet reflects
-  // the tap.
+  // Disables every option row for one vote/retract request — changing a
+  // vote touches two options at once, and this isn't optimistic.
   bool _isVoting = false;
 
   Future<void> _handleTap(Poll poll, PollOption option) async {
@@ -49,11 +37,8 @@ class _PollContentState extends ConsumerState<_PollContent> {
         await notifier.castVote(widget.message.id, poll.id, option.id);
       }
     } catch (e) {
-      // Not just `on ApiException` — `_isVoting` is already guaranteed
-      // to reset either way via `finally` below, but without this an
-      // unforeseen failure would still vote/retract *silently*: no
-      // SnackBar, nothing wrong-looking on screen, just a tap that
-      // quietly did nothing.
+      // Broad catch — otherwise an unforeseen failure votes/retracts
+      // silently, with no SnackBar to show for it.
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -100,14 +85,9 @@ class _PollContentState extends ConsumerState<_PollContent> {
   @override
   Widget build(BuildContext context) {
     final poll = widget.message.poll;
-    // A poll message always carries its poll from the moment it's ever
-    // shown (see message.service.js `attachPolls`) — this only guards
-    // against the one edge case where it wouldn't: a poll message that
-    // was itself soft-deleted, whose `polls` row is gone too. That's
-    // already handled one level up, by `_MessageBubble`'s own
-    // `isDeleted` tombstone branch, which never reaches this widget at
-    // all — so in practice this never renders, but failing safely (not
-    // crashing) costs nothing.
+    // Guards a deleted poll message, whose poll row is gone too —
+    // already handled by `_MessageBubble`'s tombstone branch, so this
+    // is just a safe fallback.
     if (poll == null) return const SizedBox.shrink();
 
     return ConstrainedBox(
@@ -186,12 +166,8 @@ class _PollOptionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final fraction = totalVotes == 0 ? 0.0 : option.voteCount / totalVotes;
-    // `onPrimary` (not a literal white) for a bubble on `colors.primary`
-    // (my own messages — see `_MessageBubble`), same theme token that
-    // bubble's own status icon/timestamp text already uses — so this
-    // still contrasts correctly against `primary` under a theme where
-    // that isn't a dark color close to white's natural pairing (e.g.
-    // this app's own light Floral theme).
+    // `onPrimary`, not a literal white, so this still contrasts under a
+    // theme where primary isn't dark (e.g. Floral).
     final accentColor = isMine ? colors.onPrimary : colors.primary;
     final fillColor = accentColor.withValues(alpha: isSelected ? 0.35 : 0.16);
     final borderColor = isSelected

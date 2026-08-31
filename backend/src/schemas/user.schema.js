@@ -1,9 +1,7 @@
 const { z } = require('zod');
 
-// Same rules as registration's username (see auth.schema.js) — kept
-// separate rather than shared so the two can diverge later (e.g. if
-// profile editing ever needs a cooldown or different constraints)
-// without entangling the registration flow.
+// Same rules as registration's username — kept separate so the two
+// can diverge later without entangling the registration flow.
 const username = z
   .string()
   .trim()
@@ -14,19 +12,16 @@ const username = z
     'Username may only contain letters, numbers, and underscores.'
   );
 
-// "About Me" — allowed to be an empty string (that's the default state),
-// just capped so a profile can't hold an unbounded amount of text.
+// "About Me" — allowed to be empty, just capped so a profile can't
+// hold unbounded text.
 const bio = z.string().trim().max(300, 'About Me must be at most 300 characters.');
 
 const updateProfileSchema = z.object({ username, bio });
 
-// An X25519 public key is always exactly 32 raw bytes, which
-// base64-encodes to 44 characters (43 content chars + one '=' padding
-// char). This is a shape check only — the server has no way to verify a
-// submitted value is actually a valid curve point, same as it can't
-// verify a JWT's signing key is "real"; a client sending garbage here
-// only breaks encryption for itself; other participants' payloads and
-// message plaintext are unaffected.
+// An X25519 public key is always 32 raw bytes, which base64-encodes
+// to 44 characters. Shape check only — the server can't verify a
+// value is actually a valid curve point; garbage here only breaks
+// encryption for the sender themselves.
 const updatePublicKeySchema = z.object({
   publicKey: z
     .string()
@@ -34,9 +29,8 @@ const updatePublicKeySchema = z.object({
     .regex(/^[A-Za-z0-9+/]{43}=$/, 'Invalid public key.'),
 });
 
-// Search term for GET /users/search. `.trim()` runs before `.min()`, so a
-// whitespace-only value (" ") is rejected the same way an empty one is —
-// both are "no real search term" from the caller's point of view.
+// Search term for GET /users/search. `.trim()` runs before `.min()`,
+// so whitespace-only counts as empty too.
 const searchQuerySchema = z.object({
   q: z
     .string()
@@ -45,12 +39,10 @@ const searchQuerySchema = z.object({
     .max(100, 'Search query is too long.'),
 });
 
-// FCM device tokens are opaque, variable-length strings with no fixed
-// shape the server can meaningfully validate beyond "non-empty, not
-// absurdly long" — same posture as the public key schema above:
-// verifying it's a *real*, currently-valid token would mean actually
-// calling Firebase, which push.service.js already does (and handles a
-// stale one gracefully) at send time, not at registration time.
+// FCM device tokens are opaque strings with no fixed shape beyond
+// "non-empty, not absurdly long" — actually verifying one is valid
+// means calling Firebase, which push.service.js already does at send
+// time, not registration time.
 const registerPushTokenSchema = z.object({
   token: z.string().trim().min(1, 'Token is required.').max(4096, 'Token is too long.'),
   platform: z.enum(['android', 'ios']).optional().default('android'),

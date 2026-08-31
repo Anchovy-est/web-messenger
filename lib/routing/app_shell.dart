@@ -191,9 +191,9 @@ const _minPanelWidth = 380.0;
 /// [_MessagingPaneState._closePanel]).
 ///
 /// When there's room, every open panel gets an equal share of the
-/// available width, matching this phase's mockup; once there are more
-/// panels than comfortably fit, the row scrolls horizontally instead so
-/// no panel ever gets squeezed below [_minPanelWidth].
+/// available width. Once there are more panels than comfortably fit,
+/// the row scrolls horizontally instead so no panel gets squeezed below
+/// [_minPanelWidth].
 class _MessagingPane extends ConsumerStatefulWidget {
   const _MessagingPane({required this.state});
 

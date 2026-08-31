@@ -2,10 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'session_controller.dart';
 
-/// Tracks the loading/error state of a single login form submission.
-/// The actual session state lives in [SessionController] — this only
-/// exists so the login screen has something to show a spinner/error for
-/// while that call is in flight.
+/// Tracks the loading/error state of a login form submission. The
+/// actual session lives in [SessionController].
 class LoginController extends StateNotifier<AsyncValue<void>> {
   LoginController(this._ref) : super(const AsyncValue.data(null));
 

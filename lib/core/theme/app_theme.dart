@@ -2,23 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'floral_palette.dart';
 
-/// Single source of truth for the app's visual theme. Keeping this in one
-/// place (rather than scattering `Colors.blue` / hard-coded styles through
-/// feature widgets) is what makes a future UI/UX polish pass tractable.
+/// Single source of truth for the app's visual theme.
 class AppTheme {
   AppTheme._();
 
   static const Color _seedColor = Color(0xFF3D5AFE);
 
-  // Every text field in the app (login, register, edit profile, the
-  // message-edit dialog, …) was independently repeating
-  // `border: const OutlineInputBorder()` — one shared theme entry means
-  // every field looks the same by construction, not by everyone
-  // remembering to copy the same line, and a future style change (e.g.
-  // rounded corners) is one edit instead of a dozen. The app-bar search
-  // field is the one deliberate exception (`InputBorder.none`, set
-  // per-field) — a search-in-app-bar field looking outlined like a form
-  // field would be the actual inconsistency.
+  // Shared outline style for every text field (search-in-app-bar fields
+  // opt out with their own `InputBorder.none`).
   static const _inputDecorationTheme = InputDecorationTheme(
     border: OutlineInputBorder(),
   );
@@ -47,20 +38,10 @@ class AppTheme {
     );
   }
 
-  /// A soft botanical/glassmorphism theme: pastel surfaces throughout,
-  /// translucent cards/dialogs/message bubbles, and low-opacity
-  /// decorative flowers behind everything (see `FloralBackground`,
-  /// wired in by `MessengerApp` only while this theme is active).
-  ///
-  /// Hand-authored (not `ColorScheme.fromSeed`) so every role is a
-  /// deliberate, checked choice rather than whatever a seed algorithm
-  /// happens to derive — the brief this follows: gentle pastels only (no
-  /// neon, no heavy saturation, nothing near-black), and every "on*" text/
-  /// icon role paired with enough contrast against its surface to stay
-  /// legible — messages, usernames, buttons, icons, fields, navigation,
-  /// and dialogs all need to read clearly, the flowers are decoration
-  /// only. All colors below come from [FloralPalette] — nothing here is
-  /// a one-off hex value invented on the spot.
+  /// A soft botanical/glassmorphism theme: pastel surfaces, translucent
+  /// cards/dialogs/bubbles, and decorative flowers behind everything
+  /// (see `FloralBackground`). Hand-authored, not seeded, so every
+  /// color role stays legible against its surface.
   static ThemeData floral() {
     const ink = FloralPalette.ink;
     const inkMuted = FloralPalette.inkMuted;
@@ -78,28 +59,19 @@ class AppTheme {
       onTertiary: ink,
       tertiaryContainer: FloralPalette.sage,
       onTertiaryContainer: ink,
-      // A softened, dusty rose-red rather than Material's default
-      // saturated red — still clearly reads as "error", just not a
-      // harsh contrast against the rest of this palette.
+      // A softened, dusty rose-red instead of a saturated one.
       error: Color(0xFFE3A9A0),
       onError: Color(0xFF4A2620),
       errorContainer: Color(0xFFF6DCD8),
       onErrorContainer: Color(0xFF6B3A33),
       surface: FloralPalette.cream,
       onSurface: ink,
-      // Translucent on purpose (an alpha channel on a ColorScheme role
-      // isn't conventional, but nothing forbids it) — this is what makes
-      // the *other* participant's message bubble, and every `Card`/
-      // `Dialog`/`BottomSheet` built on this role, genuinely glassy
-      // against the flowers behind it rather than a flat, opaque pastel.
+      // Translucent on purpose, for the glassy look over the flowers.
       surfaceContainerHighest: Color(0xE6E7ECF7),
       onSurfaceVariant: inkMuted,
       outline: Color(0xFFCBB3BB),
       outlineVariant: Color(0xFFE3D2D8),
-      // Used by SnackBar's default M3 styling — an ink-colored pill with
-      // pale text feels deliberately designed rather than defaulting to
-      // Material's cool gray, which would clash with everything else
-      // here.
+      // SnackBar styling: an ink-colored pill with pale text.
       inverseSurface: ink,
       onInverseSurface: FloralPalette.cream,
       inversePrimary: FloralPalette.pastelPink,
@@ -109,9 +81,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      // Transparent, not [FloralPalette.cream] — `FloralBackground`
-      // already paints the cream base *and* the flowers behind every
-      // screen; an opaque Scaffold background here would hide both.
+      // Transparent — `FloralBackground` paints the cream base + flowers.
       scaffoldBackgroundColor: Colors.transparent,
       appBarTheme: AppBarTheme(
         centerTitle: true,

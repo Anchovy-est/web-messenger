@@ -3,27 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/core_providers.dart';
 import '../data/profile_providers.dart';
 
-/// Thrown by [NotificationSettingsController.setEnabled] when the user
-/// tries to turn notifications *on* but the OS permission prompt was
-/// actually declined — distinct from a plain [ApiException] so the
-/// profile screen can show a message that's actually about what
-/// happened, not a generic network-error string.
+/// Thrown when the user tries to turn notifications on but the OS
+/// permission prompt was declined.
 class NotificationPermissionDeniedException implements Exception {
   const NotificationPermissionDeniedException();
 }
 
-/// Backs the profile screen's "Push notifications" toggle. Reads/writes
-/// [SecureStorageService.readNotificationsEnabled] as the durable
-/// record of the user's own choice (see that method's doc comment for
-/// why "never set" defaults to enabled), and drives the actual
-/// permission request / token register-or-unregister through
-/// [PushNotificationService] + [ProfileRepository].
-///
-/// Deliberately *not* optimistic: this is a rare, deliberate action, not
-/// something that benefits from an instant-feedback illusion, and
-/// getting it visibly wrong (showing "on" when the permission prompt was
-/// actually declined) would be worse than a brief disabled state while
-/// the toggle resolves.
+/// Backs the profile screen's "Push notifications" toggle. Not
+/// optimistic — a brief disabled state while it resolves beats showing
+/// "on" when permission was actually declined.
 class NotificationSettingsController extends StateNotifier<AsyncValue<bool>> {
   NotificationSettingsController(this._ref)
     : super(const AsyncValue.loading()) {
@@ -65,13 +53,8 @@ class NotificationSettingsController extends StateNotifier<AsyncValue<bool>> {
     });
     if (!mounted) return;
     if (result.hasError) {
-      // Two separate assignments, deliberately: the first lets anything
-      // listening for the failure (the profile screen's SnackBar) react
-      // to it, and the second settles the toggle back to exactly what
-      // it showed before — see the class doc comment on why this isn't
-      // optimistic. Collapsing this into one assignment would mean the
-      // error state never actually exists as far as any listener can
-      // observe, silently losing it.
+      // Two assignments: let listeners react to the error first, then
+      // settle back to what the toggle showed before.
       state = result;
       if (!mounted) return;
       state = previous;
