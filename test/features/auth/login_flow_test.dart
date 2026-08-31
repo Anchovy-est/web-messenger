@@ -29,10 +29,18 @@ const _fakeUser = User(
 /// Fakes the whole backend surface the session flow touches: login,
 /// fetchCurrentUser (session restore), and logout.
 class _FakeAuthRepository extends AuthRepository {
-  _FakeAuthRepository({this.loginError, this.currentUser}) : super(ApiClient());
+  _FakeAuthRepository({this.loginError, this.currentUser, this.restoreError})
+    : super(ApiClient());
 
   final ApiException? loginError;
   User? currentUser;
+
+  /// Overrides what [fetchCurrentUser] throws — lets a test simulate the
+  /// backend being unreachable (a network/timeout/5xx `ApiException`,
+  /// like `ApiException.fromDioException` itself would produce) as
+  /// opposed to the default "no session" 401 below, which is a genuine,
+  /// confirmed rejection.
+  ApiException? restoreError;
 
   @override
   Future<LoginResult> login({
@@ -50,6 +58,7 @@ class _FakeAuthRepository extends AuthRepository {
 
   @override
   Future<User> fetchCurrentUser() async {
+    if (restoreError != null) throw restoreError!;
     if (currentUser == null) {
       throw const ApiException(
         statusCode: 401,
@@ -241,4 +250,98 @@ void main() {
       findsNothing,
     );
   });
+
+  // --- Phase 12: session restore vs. backend/network failure ----------
+
+  testWidgets(
+    'a stored session that cannot be reached at startup shows a retry '
+    'screen, not a forced logout',
+    (tester) async {
+      final repository = _FakeAuthRepository(
+        currentUser: _fakeUser,
+        restoreError: const ApiException(
+          statusCode: null,
+          code: 'NETWORK_ERROR',
+          message: 'No internet connection detected.',
+        ),
+      );
+      final storage = FakeSecureStorageService(
+        accessToken: 'stored-access-token',
+        refreshToken: 'stored-refresh-token',
+      );
+
+      await _pumpApp(tester, repository: repository, storage: storage);
+
+      // The generic headline, plus this specific failure's own message.
+      expect(find.text('Could not reach the server.'), findsOneWidget);
+      expect(find.text('No internet connection detected.'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
+      // Not bounced to the login screen — a connectivity failure must
+      // never look identical to "you are logged out".
+      expect(find.text('Log in'), findsNothing);
+      // The tokens are still there — nothing about failing to reach the
+      // server should have discarded a session that might still be
+      // perfectly valid.
+      expect(await storage.readAccessToken(), 'stored-access-token');
+    },
+  );
+
+  testWidgets(
+    'retrying a failed restore succeeds once the backend is reachable '
+    'again',
+    (tester) async {
+      final repository = _FakeAuthRepository(
+        currentUser: _fakeUser,
+        restoreError: const ApiException(
+          statusCode: 503,
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'The service is temporarily unavailable.',
+        ),
+      );
+      await _pumpApp(
+        tester,
+        repository: repository,
+        storage: FakeSecureStorageService(
+          accessToken: 'stored-access-token',
+          refreshToken: 'stored-refresh-token',
+        ),
+      );
+      expect(
+        find.text('The service is temporarily unavailable.'),
+        findsOneWidget,
+      );
+
+      // The backend is reachable again by the time the user retries.
+      repository.restoreError = null;
+      await tester.tap(find.widgetWithText(FilledButton, 'Retry'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('No chats yet.'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a stored session the backend actually rejects (not just unreachable) '
+    'does land on the login screen',
+    (tester) async {
+      final repository = _FakeAuthRepository(
+        restoreError: const ApiException(
+          statusCode: 401,
+          code: 'UNAUTHENTICATED',
+          message: 'Invalid or expired token.',
+        ),
+      );
+      await _pumpApp(
+        tester,
+        repository: repository,
+        storage: FakeSecureStorageService(
+          accessToken: 'stale-access-token',
+          refreshToken: 'stale-refresh-token',
+        ),
+      );
+
+      expect(find.text('Log in'), findsWidgets);
+      expect(find.text('Could not reach the server.'), findsNothing);
+    },
+  );
 }

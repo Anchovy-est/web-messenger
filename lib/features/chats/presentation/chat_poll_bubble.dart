@@ -48,11 +48,17 @@ class _PollContentState extends ConsumerState<_PollContent> {
       } else {
         await notifier.castVote(widget.message.id, poll.id, option.id);
       }
-    } on ApiException catch (e) {
+    } catch (e) {
+      // Not just `on ApiException` — `_isVoting` is already guaranteed
+      // to reset either way via `finally` below, but without this an
+      // unforeseen failure would still vote/retract *silently*: no
+      // SnackBar, nothing wrong-looking on screen, just a tap that
+      // quietly did nothing.
       if (!mounted) return;
+      final message = e is ApiException ? e.message : 'Something went wrong.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) setState(() => _isVoting = false);
     }

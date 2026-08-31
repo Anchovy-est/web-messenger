@@ -47,6 +47,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       switch (status) {
         case SessionStatus.unknown:
+        case SessionStatus.restoreFailed:
           return null; // stay put; '/' renders the splash screen below.
         case SessionStatus.unauthenticated:
           return goingToAuthScreen ? null : '/login';

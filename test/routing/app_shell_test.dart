@@ -92,7 +92,10 @@ class _FakeMessageRepository extends MessageRepository {
   Future<void> markRead(String chatId) async {}
 }
 
-Future<void> _pumpDesktopApp(WidgetTester tester) async {
+Future<void> _pumpDesktopApp(
+  WidgetTester tester, {
+  FakeSocketService? socketService,
+}) async {
   // Wider than `Breakpoints.mediumMax` — the "expanded" desktop window
   // size class, sidebar shown with labels.
   tester.view.physicalSize = const Size(1400, 900);
@@ -109,7 +112,9 @@ Future<void> _pumpDesktopApp(WidgetTester tester) async {
         authRepositoryProvider.overrideWithValue(_FakeAuthRepository()),
         chatRepositoryProvider.overrideWithValue(_FakeChatRepository()),
         messageRepositoryProvider.overrideWithValue(_FakeMessageRepository()),
-        socketServiceProvider.overrideWithValue(FakeSocketService()),
+        socketServiceProvider.overrideWithValue(
+          socketService ?? FakeSocketService(),
+        ),
       ],
       child: const MessengerApp(),
     ),
@@ -274,4 +279,37 @@ void main() {
       expect(find.byIcon(Icons.notifications_none), findsNWidgets(2));
     },
   );
+
+  // --- Phase 12: connection status is visible on every desktop route --
+
+  testWidgets(
+    'a dropped realtime connection is visible on the Profile screen too, '
+    'not just the chat screens',
+    (tester) async {
+      await _pumpDesktopApp(
+        tester,
+        socketService: FakeSocketService(connected: false),
+      );
+
+      await tester.tap(find.byIcon(Icons.person_outline));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Profile'), findsWidgets);
+      expect(find.text('No connection — reconnecting…'), findsOneWidget);
+    },
+  );
+
+  testWidgets('the connection banner disappears once the socket reconnects', (
+    tester,
+  ) async {
+    final socketService = FakeSocketService(connected: false);
+    await _pumpDesktopApp(tester, socketService: socketService);
+
+    expect(find.text('No connection — reconnecting…'), findsOneWidget);
+
+    socketService.setConnected(true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('No connection — reconnecting…'), findsNothing);
+  });
 }

@@ -43,11 +43,16 @@ class _EditMessageDialogState extends ConsumerState<_EditMessageDialog> {
           .read(chatDetailControllerProvider(widget.chatId).notifier)
           .editMessage(widget.message.id, text);
       if (mounted) Navigator.of(context).pop();
-    } on ApiException catch (e) {
+    } catch (e) {
+      // Deliberately not just `on ApiException` — anything unforeseen
+      // (a crypto library hiccup encrypting the edit, say) must still
+      // land here and reset `_saving`, or this dialog is stuck showing
+      // a spinner on a permanently disabled Save button for the rest of
+      // its life, with no way out but dismissing it and losing the edit.
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = e.message;
+        _error = e is ApiException ? e.message : 'Something went wrong.';
       });
     }
   }

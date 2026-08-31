@@ -37,6 +37,15 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
   @override
   void initState() {
     super.initState();
+    _startFetch();
+  }
+
+  // Split out from `initState` so a failed download/decrypt (a network
+  // blip, most commonly — see `_fetchAndDecrypt`) has somewhere to
+  // return to on retry, rather than leaving a permanently broken icon
+  // as the only thing this bubble will ever show again for the rest of
+  // this session.
+  void _startFetch() {
     final message = widget.message;
     final isLocal =
         message.status == MessageStatus.sending ||
@@ -50,6 +59,8 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
       _future = _fetchAndDecrypt(ref, message);
     }
   }
+
+  void _retry() => setState(_startFetch);
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +87,23 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
               return const LoadingView();
             }
             if (!snapshot.hasData) {
-              return const Center(child: Icon(Icons.broken_image_outlined));
+              // Most commonly a network failure downloading the
+              // (still-encrypted) bytes — tapping retries the fetch
+              // rather than leaving this permanently broken for the
+              // rest of the session.
+              return InkWell(
+                onTap: _retry,
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.broken_image_outlined),
+                      SizedBox(height: 4),
+                      Text('Tap to retry', style: TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                ),
+              );
             }
             return Image.memory(snapshot.data!, fit: BoxFit.cover);
           },
@@ -234,13 +261,34 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
     super.dispose();
   }
 
+  // Most failures here (the download itself, or writing/reading the
+  // temp file `PlatformVideoBytesSource` needs — see `_initialize`) are
+  // transient, so retrying is genuinely worth offering rather than
+  // leaving this bubble permanently broken for the rest of the session.
+  void _retry() {
+    setState(() => _failed = false);
+    _initialize();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_failed) {
-      return const SizedBox(
+      return SizedBox(
         width: 220,
         height: 140,
-        child: Center(child: Icon(Icons.broken_image_outlined)),
+        child: InkWell(
+          onTap: _retry,
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.broken_image_outlined),
+                SizedBox(height: 4),
+                Text('Tap to retry', style: TextStyle(fontSize: 11)),
+              ],
+            ),
+          ),
+        ),
       );
     }
     final controller = _controller;
@@ -392,18 +440,29 @@ class _AudioContentState extends ConsumerState<_AudioContent> {
     return '$minutes:$seconds';
   }
 
+  // Same reasoning as `_ImageContent`/`_VideoContent`'s own retry —
+  // most commonly a network failure downloading the recording, not
+  // something permanent, so this shouldn't be a dead end.
+  void _retry() {
+    setState(() => _sourceFailed = false);
+    _prepareSource();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_sourceFailed) {
-      return const SizedBox(
+      return SizedBox(
         height: 40,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline),
-            SizedBox(width: 8),
-            Text('Voice message unavailable'),
-          ],
+        child: InkWell(
+          onTap: _retry,
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline),
+              SizedBox(width: 8),
+              Text('Voice message unavailable · tap to retry'),
+            ],
+          ),
         ),
       );
     }

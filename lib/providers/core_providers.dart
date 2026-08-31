@@ -27,7 +27,9 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 // Connected/disconnected by SessionController alongside its own state
 // transitions — see session_controller.dart.
 final socketServiceProvider = Provider<SocketService>((ref) {
-  final service = SocketService();
+  final service = SocketService(
+    secureStorage: ref.watch(secureStorageServiceProvider),
+  );
   ref.onDispose(service.disconnect);
   return service;
 });

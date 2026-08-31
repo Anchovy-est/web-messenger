@@ -83,11 +83,15 @@ class _CreatePollDialogState extends ConsumerState<_CreatePollDialog> {
             isAnonymous: _isAnonymous,
           );
       if (mounted) Navigator.of(context).pop();
-    } on ApiException catch (e) {
+    } catch (e) {
+      // Deliberately not just `on ApiException` — see the identical
+      // reasoning in `_EditMessageDialog._save`: anything unforeseen
+      // must still reset `_saving`, or this dialog is stuck on a
+      // permanently disabled Create button forever.
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = e.message;
+        _error = e is ApiException ? e.message : 'Something went wrong.';
       });
     }
   }

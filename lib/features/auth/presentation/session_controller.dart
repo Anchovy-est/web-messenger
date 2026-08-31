@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api_exception.dart';
 import '../../../models/user.dart';
 import '../../../providers/core_providers.dart';
 import '../../../services/encryption_service.dart';
@@ -64,12 +65,52 @@ class SessionController extends StateNotifier<SessionState> {
       _socketService.connect(accessToken);
       unawaited(_ensureIdentityKeyPair(user.publicKey));
       unawaited(_ensurePushNotificationsRegistered());
+    } on ApiException catch (e) {
+      if (_isConnectivityFailure(e)) {
+        // Couldn't even reach the backend to ask whether this token is
+        // still good — leave the tokens alone (they may well still be
+        // valid) and land on a retryable "can't reach the server" state
+        // instead of a silent, unexplained logout. See
+        // `SessionStatus.restoreFailed`'s doc comment.
+        state = SessionState.restoreFailed(e.message);
+        return;
+      }
+      // A definitive rejection (expired/invalid token, and the
+      // interceptor's own transparent refresh attempt also failed) — no
+      // usable session, so there's nothing lost by clearing it.
+      await _secureStorage.clearTokens();
+      state = SessionState.unauthenticated;
     } catch (_) {
-      // Access token invalid and refresh (attempted transparently by
-      // ApiClient's interceptor) also failed — no usable session.
+      // Anything other than the typed ApiException above (shouldn't
+      // normally happen — AuthRepository always throws that — but
+      // failing safe here matters more than being right about why).
       await _secureStorage.clearTokens();
       state = SessionState.unauthenticated;
     }
+  }
+
+  /// True for the flavor of [ApiException] that means "the request never
+  /// actually reached the backend and got a real answer" — no network,
+  /// the server unreachable/down, a timeout, or the server up but
+  /// erroring (a 5xx, e.g. the database being unavailable — see
+  /// backend/src/middleware/errorHandler.js) — as opposed to the backend
+  /// actively, successfully telling us the token is invalid. Only the
+  /// latter is a real "you are logged out".
+  bool _isConnectivityFailure(ApiException e) {
+    if (e.code == 'NETWORK_ERROR' || e.code == 'TIMEOUT') return true;
+    final status = e.statusCode;
+    return status != null && status >= 500;
+  }
+
+  /// Retries [_restore] after landing on [SessionStatus.restoreFailed] —
+  /// wired to that state's "Retry" button (see `SplashScreen`). Resets
+  /// to [SessionState.unknown] first so the UI shows the same plain
+  /// loading state a fresh app launch would, rather than the error
+  /// state flickering directly into itself if this retry fails again
+  /// too.
+  Future<void> retryRestore() {
+    state = SessionState.unknown;
+    return _restore();
   }
 
   Future<void> login({required String email, required String password}) async {

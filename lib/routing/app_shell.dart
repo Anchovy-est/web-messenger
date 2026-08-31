@@ -9,6 +9,7 @@ import '../features/chats/presentation/chat_list_screen.dart';
 import '../features/chats/presentation/open_chat_panels_controller.dart';
 import '../features/invitations/presentation/invitations_screen.dart';
 import '../features/search/presentation/search_screen.dart';
+import '../widgets/connection_banner.dart';
 import '../widgets/desktop_dialog.dart';
 import '../widgets/user_avatar.dart';
 
@@ -53,20 +54,33 @@ class AppShell extends ConsumerWidget {
     final isMessagingRoute = location == '/' || location.startsWith('/chats/');
 
     return Scaffold(
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Column(
         children: [
-          _Sidebar(location: location),
-          const VerticalDivider(width: 1, thickness: 1),
+          // Shown once here for every desktop-authenticated route —
+          // `ChatListScreen`/`ChatDetailScreen` also render their own
+          // copy for the mobile layout (where this shell doesn't exist
+          // at all), but on desktop this was previously the only place
+          // a dropped realtime connection was visible at all; Search,
+          // Invitations, and Profile had no indicator whatsoever.
+          const ConnectionBanner(),
           Expanded(
-            child: isMessagingRoute
-                ? _MessagingPane(state: state)
-                : Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: child,
-                    ),
-                  ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Sidebar(location: location),
+                const VerticalDivider(width: 1, thickness: 1),
+                Expanded(
+                  child: isMessagingRoute
+                      ? _MessagingPane(state: state)
+                      : Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 960),
+                            child: child,
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

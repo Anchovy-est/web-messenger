@@ -490,11 +490,17 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       await ref
           .read(chatDetailControllerProvider(widget.chatId).notifier)
           .deleteMessage(message.id);
-    } on ApiException catch (e) {
+    } catch (e) {
+      // Not just `on ApiException` — an unforeseen failure here should
+      // still tell the user their delete didn't go through, rather than
+      // failing with no visible feedback at all.
       if (!mounted) return;
+      final errorMessage = e is ApiException
+          ? e.message
+          : 'Something went wrong.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ).showSnackBar(SnackBar(content: Text(errorMessage)));
     }
   }
 

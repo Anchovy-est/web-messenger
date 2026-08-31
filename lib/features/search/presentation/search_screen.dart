@@ -122,15 +122,21 @@ class _SearchResultTileState extends ConsumerState<_SearchResultTile> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Invitation sent to ${widget.user.username}.')),
       );
-    } on ApiException catch (e) {
+    } catch (e) {
+      // Not just `on ApiException` — without this, an unforeseen
+      // failure would leave `_status` stuck at `sending` forever: a
+      // permanently spinning, permanently disabled "Invite" button on
+      // this tile with no way to try again short of leaving and
+      // re-searching.
       if (!mounted) return;
       setState(() => _status = _InviteStatus.idle);
       // ALREADY_IN_CHAT / INVITATION_ALREADY_PENDING both explain
       // themselves via e.message — this doesn't navigate to the existing
       // chat, so a snackbar is the full treatment for now.
+      final message = e is ApiException ? e.message : 'Something went wrong.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 

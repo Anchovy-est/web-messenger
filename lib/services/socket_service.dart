@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 
 import '../config/env.dart';
@@ -7,6 +8,7 @@ import '../models/message.dart';
 import '../models/message_status_update.dart';
 import '../models/poll_update.dart';
 import '../models/typing_update.dart';
+import 'secure_storage_service.dart';
 
 /// The app's single realtime connection. Messages are always *sent* over
 /// REST (see `MessageRepository.sendMessage`) — this only carries the
@@ -21,6 +23,10 @@ import '../models/typing_update.dart';
 /// wiring, mirroring how `ApiClient` attaches the access token per
 /// request, except a socket authenticates once, at connect time.
 class SocketService {
+  SocketService({SecureStorageService? secureStorage})
+    : _secureStorage = secureStorage ?? SecureStorageService();
+
+  final SecureStorageService _secureStorage;
   socket_io.Socket? _socket;
   final StreamController<Message> _messageController =
       StreamController<Message>.broadcast();
@@ -92,6 +98,30 @@ class SocketService {
     _connectionStatusController.add(connected);
   }
 
+  /// Parses one socket payload and adds it to [controller] — shared by
+  /// every `socket.on(...)` handler below so a malformed payload for
+  /// any one of them (an unexpected shape, a missing required field)
+  /// can only ever drop that one event, logged and otherwise harmless,
+  /// rather than throwing out of a JS-interop event callback where
+  /// nothing in this app can guarantee it'd be caught as cleanly as an
+  /// ordinary Dart exception would be. In practice this should be
+  /// unreachable — the backend's own shape is what `fromJson` expects,
+  /// by construction — but "the backend and client can never disagree"
+  /// isn't a guarantee worth a crash if it's ever wrong.
+  void _emit<T>(
+    String event,
+    dynamic data,
+    StreamController<T> controller,
+    T Function(Map<String, dynamic>) fromJson,
+  ) {
+    if (data is! Map) return;
+    try {
+      controller.add(fromJson(Map<String, dynamic>.from(data)));
+    } catch (err) {
+      debugPrint('Ignoring malformed "$event" socket payload: $err');
+    }
+  }
+
   void connect(String accessToken) {
     disconnect(); // replace any existing connection (e.g. after a token refresh)
 
@@ -101,7 +131,23 @@ class SocketService {
           .setTransports(['websocket'])
           .disableAutoConnect()
           .enableForceNew()
-          .setAuth({'token': accessToken})
+          // A function, not a plain `{'token': accessToken}` map — that
+          // would bake in whatever token was current *at this call*
+          // forever, including on every automatic reconnection attempt
+          // socket.io makes after a drop. If the access token has since
+          // rotated (a background REST 401 silently refreshed it — see
+          // ApiClient) by the time a reconnect actually happens, retrying
+          // with the now-stale token this closure captured would just
+          // keep failing, leaving `ConnectionBanner` stuck on
+          // "reconnecting…" indefinitely even though a perfectly valid
+          // token exists in storage. Re-reading it fresh on every
+          // (re)connection attempt is what actually lets a dropped
+          // socket recover on its own instead of needing a full logout/
+          // login to fix.
+          .setAuthFn((callback) async {
+            final token = await _secureStorage.readAccessToken() ?? accessToken;
+            callback({'token': token});
+          })
           .build(),
     );
 
@@ -114,45 +160,51 @@ class SocketService {
     socket.on('disconnect', (_) => _setConnected(false));
     socket.on('connect_error', (_) => _setConnected(false));
 
-    socket.on('message:new', (data) {
-      if (data is! Map) return;
-      _messageController.add(Message.fromJson(Map<String, dynamic>.from(data)));
-    });
-
-    socket.on('message:status', (data) {
-      if (data is! Map) return;
-      _statusController.add(
-        MessageStatusUpdate.fromJson(Map<String, dynamic>.from(data)),
-      );
-    });
-
-    socket.on('typing', (data) {
-      if (data is! Map) return;
-      _typingController.add(
-        TypingUpdate.fromJson(Map<String, dynamic>.from(data)),
-      );
-    });
-
-    socket.on('message:edited', (data) {
-      if (data is! Map) return;
-      _editedMessageController.add(
-        Message.fromJson(Map<String, dynamic>.from(data)),
-      );
-    });
-
-    socket.on('message:deleted', (data) {
-      if (data is! Map) return;
-      _deletedMessageController.add(
-        Message.fromJson(Map<String, dynamic>.from(data)),
-      );
-    });
-
-    socket.on('poll:updated', (data) {
-      if (data is! Map) return;
-      _pollUpdatedController.add(
-        PollUpdate.fromJson(Map<String, dynamic>.from(data)),
-      );
-    });
+    socket.on(
+      'message:new',
+      (data) =>
+          _emit('message:new', data, _messageController, Message.fromJson),
+    );
+    socket.on(
+      'message:status',
+      (data) => _emit(
+        'message:status',
+        data,
+        _statusController,
+        MessageStatusUpdate.fromJson,
+      ),
+    );
+    socket.on(
+      'typing',
+      (data) => _emit('typing', data, _typingController, TypingUpdate.fromJson),
+    );
+    socket.on(
+      'message:edited',
+      (data) => _emit(
+        'message:edited',
+        data,
+        _editedMessageController,
+        Message.fromJson,
+      ),
+    );
+    socket.on(
+      'message:deleted',
+      (data) => _emit(
+        'message:deleted',
+        data,
+        _deletedMessageController,
+        Message.fromJson,
+      ),
+    );
+    socket.on(
+      'poll:updated',
+      (data) => _emit(
+        'poll:updated',
+        data,
+        _pollUpdatedController,
+        PollUpdate.fromJson,
+      ),
+    );
 
     socket.connect();
     _socket = socket;
