@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
@@ -25,10 +26,19 @@ class AudioRecorderService {
 
   /// Starts recording to a fresh temporary file. Caller must already
   /// have confirmed [hasPermission].
+  ///
+  /// [path_provider] has no Web implementation (there's no real
+  /// filesystem to point a temp directory at) — `record`'s own Web
+  /// implementation doesn't actually need this argument anyway, since it
+  /// records entirely in-browser and returns a `blob:` URL from [stop]
+  /// regardless of what `path` was given, so this only calls
+  /// [getTemporaryDirectory] on platforms where it works, and passes a
+  /// bare filename the rest of the time.
   Future<void> start() async {
-    final dir = await getTemporaryDirectory();
-    final path =
-        '${dir.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+    final filename = 'voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+    final path = kIsWeb
+        ? filename
+        : '${(await getTemporaryDirectory()).path}/$filename';
     await _recorder.start(
       const RecordConfig(
         encoder: AudioEncoder.aacLc,
@@ -39,8 +49,12 @@ class AudioRecorderService {
     );
   }
 
-  /// Stops recording and returns the path to the finished file, or
-  /// `null` if nothing was actually recorded (e.g. stopped instantly).
+  /// Stops recording and returns the path to the finished file — a real
+  /// file path on mobile/desktop, a `blob:` object URL on Web (see
+  /// [start]'s doc comment) — or `null` if nothing was actually recorded
+  /// (e.g. stopped instantly). Either way, the caller reads it back via
+  /// `readLocalMediaBytes` (see lib/core/media/local_media_bytes.dart),
+  /// which knows which of the two it's looking at.
   Future<String?> stop() => _recorder.stop();
 
   /// Stops and discards the in-progress recording — used when the user

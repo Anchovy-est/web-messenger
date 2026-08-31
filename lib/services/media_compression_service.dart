@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:video_compress/video_compress.dart';
 
@@ -27,42 +29,58 @@ class MediaCompressionFailedException implements Exception {
   const MediaCompressionFailedException();
 }
 
-/// Client-side image/video compression (Phases 18/19) ahead of upload —
-/// wraps two different platform-channel plugins behind one small
-/// interface so `ChatDetailScreen` doesn't need to know which one
-/// applies to which picked file.
+/// Client-side image/video compression ahead of upload — wraps two
+/// different platform-channel plugins behind one small, bytes-in/
+/// bytes-out interface so `ChatDetailScreen` doesn't need to know which
+/// one applies to which picked file, or which platform it's running on.
+///
+/// Bytes in, bytes out (not file paths) on purpose: it's what makes this
+/// work on Web too, where a picked `XFile`'s `.path` is a `blob:` URL
+/// rather than something `dart:io`/these plugins' path-based APIs can
+/// read at all — `XFile.readAsBytes()` is the one thing about a picked
+/// file that's actually cross-platform.
 class MediaCompressionService {
   /// Resizes (longest side capped at 1920px) and re-encodes as JPEG at
-  /// reduced quality. Returns the path to the compressed file — deliberately
-  /// a *new* file next to the source, so the original picked file is left
-  /// untouched (its path is also what a failed send's retry re-attempts
-  /// with, so it must keep meaning "this exact file").
-  Future<String> compressImage(String sourcePath) async {
-    final targetPath = _siblingPath(sourcePath, 'jpg');
-    final result = await FlutterImageCompress.compressAndGetFile(
-      sourcePath,
-      targetPath,
+  /// reduced quality — `flutter_image_compress`'s bytes-in/bytes-out API
+  /// works identically on every platform this app runs on, Web included.
+  Future<Uint8List> compressImage(Uint8List bytes) async {
+    final result = await FlutterImageCompress.compressWithList(
+      bytes,
       quality: 80,
       minWidth: 1920,
       minHeight: 1920,
     );
-    if (result == null) {
+    if (result.isEmpty) {
       throw const MediaCompressionFailedException();
     }
-
-    final size = await File(result.path).length();
-    if (size > kMaxMediaBytes) {
-      throw MediaTooLargeException(size);
+    if (result.length > kMaxMediaBytes) {
+      throw MediaTooLargeException(result.length);
     }
-    return result.path;
+    return result;
   }
 
   /// Re-encodes at a reduced bitrate/resolution via the platform's video
   /// codec (MediaCodec on Android, AVFoundation on iOS) — real
   /// transcoding, not just a duration/quality cap at picking time.
-  Future<String> compressVideo(String sourcePath) async {
+  ///
+  /// `video_compress` has no Web implementation at all (it's a native-
+  /// codec plugin with nothing to bind to in a browser) — on Web,
+  /// [source]'s original bytes pass through unchanged instead of being
+  /// re-encoded, still subject to the same [kMaxMediaBytes] cap below,
+  /// so an oversized video on Web fails fast with the same
+  /// [MediaTooLargeException] a mobile user would see after compression
+  /// fell short, rather than uploading for nothing.
+  Future<Uint8List> compressVideo(XFile source) async {
+    if (kIsWeb) {
+      final bytes = await source.readAsBytes();
+      if (bytes.length > kMaxMediaBytes) {
+        throw MediaTooLargeException(bytes.length);
+      }
+      return bytes;
+    }
+
     final info = await VideoCompress.compressVideo(
-      sourcePath,
+      source.path,
       quality: VideoQuality.MediumQuality,
       deleteOrigin: false,
     );
@@ -71,16 +89,10 @@ class MediaCompressionService {
       throw const MediaCompressionFailedException();
     }
 
-    final size = await File(path).length();
-    if (size > kMaxMediaBytes) {
-      throw MediaTooLargeException(size);
+    final bytes = await File(path).readAsBytes();
+    if (bytes.length > kMaxMediaBytes) {
+      throw MediaTooLargeException(bytes.length);
     }
-    return path;
-  }
-
-  String _siblingPath(String sourcePath, String extension) {
-    final dir = File(sourcePath).parent.path;
-    final stamp = DateTime.now().microsecondsSinceEpoch;
-    return '$dir/compressed_$stamp.$extension';
+    return bytes;
   }
 }

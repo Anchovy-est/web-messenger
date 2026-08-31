@@ -7,10 +7,11 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/api_exception.dart';
+import '../../../core/media/local_media_bytes.dart';
+import '../../../core/media/video_bytes_source.dart';
 import '../../../models/message.dart';
 import '../../../providers/core_providers.dart';
 import '../../../services/audio_recorder_service.dart';
@@ -177,8 +178,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             imageQuality: 90,
           );
           if (picked == null || !mounted) return;
+          final originalBytes = await picked.readAsBytes();
+          if (!mounted) return;
           final compressed = await _compressionService.compressImage(
-            picked.path,
+            originalBytes,
           );
           if (!mounted) return;
           ref
@@ -193,9 +196,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             maxDuration: const Duration(minutes: 2),
           );
           if (picked == null || !mounted) return;
-          final compressed = await _compressionService.compressVideo(
-            picked.path,
-          );
+          // [picked] itself (not just its bytes), not yet read here —
+          // on mobile, `compressVideo` re-encodes straight from
+          // `picked.path` via the native codec; only on Web (see its own
+          // doc comment) does it fall back to reading `picked`'s
+          // original bytes at all.
+          final compressed = await _compressionService.compressVideo(picked);
           if (!mounted) return;
           ref
               .read(chatDetailControllerProvider(widget.chatId).notifier)
@@ -291,12 +297,26 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
     if (path == null) return; // nothing was actually captured
     if (elapsed < _minRecordingDuration) {
+      // Best-effort — a no-op on Web (see `readLocalMediaBytes`'s doc
+      // comment: `path` is a `blob:` URL there, not a real file `dart:io`
+      // can delete), which is fine: there's nothing meaningful to clean
+      // up for a Blob the browser will garbage-collect on its own once
+      // nothing references its object URL any longer.
       unawaited(File(path).delete().catchError((_) => File(path!)));
       return;
     }
-    ref
-        .read(chatDetailControllerProvider(widget.chatId).notifier)
-        .sendAudio(path);
+    try {
+      final bytes = await readLocalMediaBytes(path);
+      if (!mounted) return;
+      ref
+          .read(chatDetailControllerProvider(widget.chatId).notifier)
+          .sendAudio(bytes);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not process that recording.')),
+      );
+    }
   }
 
   /// Stops and discards the in-progress recording — the composer
@@ -529,10 +549,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                               if (message.type == 'text') {
                                 notifier.retry(message.id, message.body ?? '');
                               } else {
-                                notifier.retryMedia(
-                                  message.id,
-                                  message.mediaUrl ?? '',
-                                );
+                                notifier.retryMedia(message.id);
                               }
                             }
                           : null,

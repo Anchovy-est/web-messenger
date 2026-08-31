@@ -75,6 +75,21 @@ dependencies:
   # (assets/flowers/flower.svg), recolored per instance
   flutter_svg: ^2.0.16
 
+  # Web-only: building a `blob:` object URL for in-browser video
+  # playback (see lib/core/media/video_bytes_source_web.dart), where
+  # dart:io/path_provider have no real filesystem to write a temp file
+  # to. Already resolved transitively (via other web plugins); listed
+  # directly here because this app imports it itself.
+  web: ^1.1.0
+
+  # Web-only: fetching the bytes back out of a `blob:` URL — the `record`
+  # package's Web implementation returns one from a finished recording
+  # instead of a real file path (see
+  # lib/core/media/local_media_bytes_web.dart). Already resolved
+  # transitively; listed directly here for the same reason as `web`
+  # above.
+  http: ^1.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

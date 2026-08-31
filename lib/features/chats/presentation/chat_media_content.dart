@@ -1,13 +1,14 @@
 part of 'chat_detail_screen.dart';
 
-/// A still-`sending`/`failed` message's [Message.mediaUrl] is a local,
-/// never-encrypted file path (nothing's been uploaded yet, or the upload
-/// didn't make it) — rendered directly. Every other status means the
-/// server has an end-to-end-encrypted copy: [chatKey] decrypts it after
-/// downloading, via [messageRepositoryProvider]/
-/// [encryptionServiceProvider]. A null [chatKey] here means this chat's
-/// key hasn't been derived yet (see `ChatDetailController.chatKey`) —
-/// shown as a lock icon rather than attempting (and failing) to decrypt.
+/// A still-`sending`/`failed` message's [Message.localBytes] is the
+/// local, never-encrypted, not-yet-uploaded image/video/audio bytes
+/// (nothing's been uploaded yet, or the upload didn't make it) —
+/// rendered directly. Every other status means the server has an
+/// end-to-end-encrypted copy: [chatKey] decrypts it after downloading,
+/// via [messageRepositoryProvider]/[encryptionServiceProvider]. A null
+/// [chatKey] here means this chat's key hasn't been derived yet (see
+/// `ChatDetailController.chatKey`) — shown as a lock icon rather than
+/// attempting (and failing) to decrypt.
 ///
 /// Stateful (not a plain build-method fetch) so the fetch+decrypt only
 /// ever runs *once*, in [initState] — starting a fresh
@@ -49,15 +50,16 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
   @override
   Widget build(BuildContext context) {
     final message = widget.message;
-    final url = message.mediaUrl;
-    if (url == null) return const SizedBox.shrink();
     final isLocal =
         message.status == MessageStatus.sending ||
         message.status == MessageStatus.failed;
+    final localBytes = message.localBytes;
+    if (!isLocal && message.mediaUrl == null) return const SizedBox.shrink();
 
     Widget child;
     if (isLocal) {
-      child = Image.file(File(url), fit: BoxFit.cover);
+      if (localBytes == null) return const SizedBox.shrink();
+      child = Image.memory(localBytes, fit: BoxFit.cover);
     } else {
       final future = _future;
       if (future == null) {
@@ -105,10 +107,13 @@ Future<Uint8List> _fetchAndDecrypt(
 /// Same local-vs-network-and-encrypted split as [_ImageContent], but a
 /// video needs an actual [VideoPlayerController] (asynchronously
 /// initialized, and disposed with the widget) rather than a one-shot
-/// image load, so this is stateful where that one isn't. Decrypted bytes
-/// for a network video are written to a temporary file first —
-/// [VideoPlayerController] has no "play these bytes directly" mode, only
-/// asset/file/network/content-URI sources.
+/// image load, so this is stateful where that one isn't. Either way, the
+/// bytes in hand (local: [Message.localBytes]; remote: decrypted after
+/// downloading) go through [PlatformVideoBytesSource] to become a
+/// controller — [VideoPlayerController] has no "play these bytes
+/// directly" mode, only asset/file/network/content-URI sources, and
+/// which of those is actually reachable differs by platform (see
+/// lib/core/media/video_bytes_source.dart).
 class _VideoContent extends ConsumerStatefulWidget {
   const _VideoContent({required this.message, required this.chatKey});
 
@@ -122,7 +127,7 @@ class _VideoContent extends ConsumerStatefulWidget {
 class _VideoContentState extends ConsumerState<_VideoContent> {
   VideoPlayerController? _controller;
   bool _failed = false;
-  File? _tempFile;
+  PlatformVideoBytesSource? _source;
 
   @override
   void initState() {
@@ -131,47 +136,56 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
   }
 
   Future<void> _initialize() async {
-    final url = widget.message.mediaUrl;
-    if (url == null) {
-      setState(() => _failed = true);
-      return;
-    }
     final isLocal =
         widget.message.status == MessageStatus.sending ||
         widget.message.status == MessageStatus.failed;
 
-    VideoPlayerController controller;
+    Uint8List bytes;
     if (isLocal) {
-      controller = VideoPlayerController.file(File(url));
+      final localBytes = widget.message.localBytes;
+      if (localBytes == null) {
+        setState(() => _failed = true);
+        return;
+      }
+      bytes = localBytes;
     } else {
+      final url = widget.message.mediaUrl;
       final key = widget.chatKey;
-      if (key == null) {
+      if (url == null || key == null) {
         setState(() => _failed = true);
         return;
       }
       try {
-        final decryptedBytes = await _fetchAndDecrypt(ref, url, key);
-        final tempDir = await getTemporaryDirectory();
-        final tempFile = File(
-          '${tempDir.path}/decrypted-${DateTime.now().microsecondsSinceEpoch}.mp4',
-        );
-        await tempFile.writeAsBytes(decryptedBytes);
-        _tempFile = tempFile;
-        controller = VideoPlayerController.file(tempFile);
+        bytes = await _fetchAndDecrypt(ref, url, key);
       } catch (_) {
         if (mounted) setState(() => _failed = true);
         return;
       }
     }
+
+    PlatformVideoBytesSource source;
+    VideoPlayerController controller;
+    try {
+      source = await PlatformVideoBytesSource.create(bytes);
+      controller = source.controller;
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
     try {
       await controller.initialize();
       if (!mounted) {
         unawaited(controller.dispose());
+        unawaited(source.cleanup());
         return;
       }
-      setState(() => _controller = controller);
+      setState(() {
+        _controller = controller;
+        _source = source;
+      });
     } catch (_) {
       unawaited(controller.dispose());
+      unawaited(source.cleanup());
       if (mounted) setState(() => _failed = true);
     }
   }
@@ -179,13 +193,11 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
   @override
   void dispose() {
     unawaited(_controller?.dispose());
-    // The decrypted plaintext temp file (if any — see `_initialize`)
-    // shouldn't linger on disk indefinitely once this bubble is gone;
-    // best-effort, same as every other cleanup in this app.
-    final tempFile = _tempFile;
-    if (tempFile != null) {
-      unawaited(tempFile.delete().catchError((_) => tempFile));
-    }
+    // The decrypted plaintext temp resource (if any — see
+    // `_initialize`/`PlatformVideoBytesSource`) shouldn't linger
+    // indefinitely once this bubble is gone; best-effort, same as every
+    // other cleanup in this app.
+    unawaited(_source?.cleanup());
     super.dispose();
   }
 
@@ -285,16 +297,21 @@ class _AudioContentState extends ConsumerState<_AudioContent> {
   }
 
   Future<void> _prepareSource() async {
-    final url = widget.message.mediaUrl;
-    if (url == null) {
-      setState(() => _sourceFailed = true);
-      return;
-    }
     final isLocal =
         widget.message.status == MessageStatus.sending ||
         widget.message.status == MessageStatus.failed;
     if (isLocal) {
-      setState(() => _source = DeviceFileSource(url));
+      final localBytes = widget.message.localBytes;
+      if (localBytes == null) {
+        setState(() => _sourceFailed = true);
+        return;
+      }
+      setState(() => _source = BytesSource(localBytes));
+      return;
+    }
+    final url = widget.message.mediaUrl;
+    if (url == null) {
+      setState(() => _sourceFailed = true);
       return;
     }
     final key = widget.chatKey;

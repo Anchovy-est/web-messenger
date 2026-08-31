@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
@@ -157,19 +156,6 @@ Future<void> _prepareCrypto() async {
   for (final plaintext in _fixtureBodies) {
     _encryptedBody[plaintext] = await _crypto.encryptText(_chatKey, plaintext);
   }
-}
-
-/// Writes [bytes] to a real temporary file and returns its path —
-/// `ChatDetailController.sendImage`/`sendVideo` now genuinely read the
-/// local file's bytes (to encrypt them) rather than just carrying a path
-/// string through to a fake, so a nonexistent placeholder path (as
-/// earlier phases could get away with) would fail with a real
-/// [PathNotFoundException].
-Future<String> _writeTempFile(String name, List<int> bytes) async {
-  final dir = await Directory.systemTemp.createTemp('mm_test_');
-  final file = File('${dir.path}/$name');
-  await file.writeAsBytes(bytes);
-  return file.path;
 }
 
 /// Stands in for `ChatRepository` — `ChatDetailController` fetches the
@@ -1396,31 +1382,13 @@ void main() {
         messageRepository: repository,
         socketService: _ControllableSocketService(),
       );
-      final originalBytes = _validPngBytes;
-      // `dart:io` file operations are real I/O — `testWidgets`' zone
-      // fake-advances `Future.delayed`/`Timer`, not the real event loop,
-      // so genuine I/O left unwrapped by `tester.runAsync` never gets a
-      // chance to complete and the test hangs forever. Unlike a purely
-      // fake-timer-based delay, the *whole* `sendImage` call (not just
-      // awaiting its result afterward) has to happen inside `runAsync`,
-      // since `File(...).readAsBytes()` is dispatched synchronously the
-      // moment `sendImage` is called, before its first `await` — wrapping
-      // only the already-in-flight `Future` it returns is too late. That
-      // rules out separately observing the mid-flight "still sending"
-      // spinner here (already covered, for text, by "a message shows a
-      // sending indicator before it resolves" above, which has no real
-      // I/O to contend with).
-      final localPath = (await tester.runAsync(
-        () => _writeTempFile('photo.jpg', originalBytes),
-      ))!;
+      final originalBytes = Uint8List.fromList(_validPngBytes);
 
       final element = tester.element(find.byType(Scaffold).first);
       final container = ProviderScope.containerOf(element);
-      await tester.runAsync(
-        () => container
-            .read(chatDetailControllerProvider('chat1').notifier)
-            .sendImage(localPath),
-      );
+      await container
+          .read(chatDetailControllerProvider('chat1').notifier)
+          .sendImage(originalBytes);
       await tester
           .pumpAndSettle(); // let the fetch+decrypt FutureBuilder resolve
 
@@ -1449,17 +1417,11 @@ void main() {
         messageRepository: repository,
         socketService: _ControllableSocketService(),
       );
-      final localPath = (await tester.runAsync(
-        () => _writeTempFile('clip.mp4', [9, 9, 9]),
-      ))!;
-
       final element = tester.element(find.byType(Scaffold).first);
       final container = ProviderScope.containerOf(element);
-      await tester.runAsync(
-        () => container
-            .read(chatDetailControllerProvider('chat1').notifier)
-            .sendVideo(localPath),
-      );
+      await container
+          .read(chatDetailControllerProvider('chat1').notifier)
+          .sendVideo(Uint8List.fromList([9, 9, 9]));
       await tester.pump();
       await tester.pump();
 
@@ -1481,22 +1443,16 @@ void main() {
         messageRepository: repository,
         socketService: _ControllableSocketService(),
       );
-      final localPath = (await tester.runAsync(
-        () => _writeTempFile('voice.m4a', [4, 8, 15, 16, 23, 42]),
-      ))!;
 
       final element = tester.element(find.byType(Scaffold).first);
       final container = ProviderScope.containerOf(element);
       // Same `AudioRecorderService`-bypass reasoning as image/video above:
       // `record` isn't mockable via Riverpod overrides either, so this
-      // drives `ChatDetailController.sendAudio` directly with a local
-      // file standing in for whatever a real recording would have
-      // produced.
-      await tester.runAsync(
-        () => container
-            .read(chatDetailControllerProvider('chat1').notifier)
-            .sendAudio(localPath),
-      );
+      // drives `ChatDetailController.sendAudio` directly with bytes
+      // standing in for whatever a real recording would have produced.
+      await container
+          .read(chatDetailControllerProvider('chat1').notifier)
+          .sendAudio(Uint8List.fromList([4, 8, 15, 16, 23, 42]));
       await tester.pump();
       await tester.pump();
 
@@ -1524,17 +1480,11 @@ void main() {
         messageRepository: repository,
         socketService: _ControllableSocketService(),
       );
-      final localPath = (await tester.runAsync(
-        () => _writeTempFile('will-fail.m4a', [1, 2, 3]),
-      ))!;
-
       final element = tester.element(find.byType(Scaffold).first);
       final container = ProviderScope.containerOf(element);
-      await tester.runAsync(
-        () => container
-            .read(chatDetailControllerProvider('chat1').notifier)
-            .sendAudio(localPath),
-      );
+      await container
+          .read(chatDetailControllerProvider('chat1').notifier)
+          .sendAudio(Uint8List.fromList([1, 2, 3]));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Failed to send'), findsOneWidget);
@@ -1546,11 +1496,13 @@ void main() {
           .value!
           .single
           .id;
-      await tester.runAsync(
-        () => container
-            .read(chatDetailControllerProvider('chat1').notifier)
-            .retryMedia(failedId, localPath),
-      );
+      // No path/bytes to pass here — `retryMedia` re-sends the bytes
+      // already sitting on the failed message's own `localBytes` (see
+      // `Message.localBytes`'s doc comment), same ones as the original
+      // attempt above.
+      await container
+          .read(chatDetailControllerProvider('chat1').notifier)
+          .retryMedia(failedId);
       await tester.pump();
       await tester.pump();
 
@@ -1578,23 +1530,20 @@ void main() {
         messageRepository: repository,
         socketService: _ControllableSocketService(),
       );
-      final localPath = (await tester.runAsync(
-        () => _writeTempFile('will-fail.jpg', [7, 7, 7]),
-      ))!;
-
       final element = tester.element(find.byType(Scaffold).first);
       final container = ProviderScope.containerOf(element);
-      await tester.runAsync(
-        () => container
-            .read(chatDetailControllerProvider('chat1').notifier)
-            .sendImage(localPath),
-      );
+      await container
+          .read(chatDetailControllerProvider('chat1').notifier)
+          .sendImage(Uint8List.fromList([7, 7, 7]));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Failed to send'), findsOneWidget);
       expect(find.byIcon(Icons.error_outline), findsOneWidget);
       final failedImage = tester.widget<Image>(find.byType(Image));
-      expect((failedImage.image as FileImage).file.path, localPath);
+      expect(
+        (failedImage.image as MemoryImage).bytes,
+        Uint8List.fromList([7, 7, 7]),
+      );
 
       repository.errorOnSendMedia = null; // the network's back
       // Retries via the controller directly rather than tapping the
@@ -1602,19 +1551,15 @@ void main() {
       // generically by the analogous text-message retry test above
       // (both types share the same `onRetry` plumbing in
       // chat_detail_screen.dart); what matters here is specifically
-      // "does retry resend the same file", which needs the same
-      // `runAsync` treatment as the original send for the same
-      // real-file-I/O reason.
+      // "does retry resend the same bytes".
       final failedId = container
           .read(chatDetailControllerProvider('chat1'))
           .value!
           .firstWhere((m) => m.status == MessageStatus.failed)
           .id;
-      await tester.runAsync(
-        () => container
-            .read(chatDetailControllerProvider('chat1').notifier)
-            .retryMedia(failedId, localPath),
-      );
+      await container
+          .read(chatDetailControllerProvider('chat1').notifier)
+          .retryMedia(failedId);
       await tester.pumpAndSettle();
 
       // The first attempt threw before ever reaching `sentMediaBytes` (see

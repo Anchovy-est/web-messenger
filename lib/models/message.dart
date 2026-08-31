@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:equatable/equatable.dart';
 
 /// A message's delivery lifecycle. `sending` and `failed` are
@@ -37,6 +39,7 @@ class Message extends Equatable {
     this.mediaUrl,
     this.editedAt,
     this.deletedAt,
+    this.localBytes,
   });
 
   final String id;
@@ -49,6 +52,22 @@ class Message extends Equatable {
   final DateTime? editedAt;
   final DateTime? deletedAt;
   final MessageStatus status;
+
+  /// The original, plaintext, not-yet-uploaded image/video/audio bytes
+  /// for a still-`sending`/`failed` media message — purely a local,
+  /// in-memory rendering/retry aid, never sent to or received from the
+  /// backend (there's deliberately no JSON field for it, and it's
+  /// excluded from [props]). Once the server confirms the upload, the
+  /// real [Message] it returns has this as `null` and a real [mediaUrl]
+  /// instead — see `ChatDetailController._resolveLocal`.
+  ///
+  /// Exists so a not-yet-uploaded image/video/audio can be shown (and,
+  /// if the upload fails, re-sent) from bytes already in memory rather
+  /// than from a local file path — [mediaUrl] on Web is a `blob:` URL,
+  /// not something `dart:io`/most plugins can read back from at all, so
+  /// bytes-in-hand is what makes this work on every platform instead of
+  /// just mobile.
+  final Uint8List? localBytes;
 
   bool get isDeleted => deletedAt != null;
 
@@ -87,6 +106,7 @@ class Message extends Equatable {
       editedAt: editedAt,
       deletedAt: deletedAt,
       status: status ?? this.status,
+      localBytes: localBytes,
     );
   }
 

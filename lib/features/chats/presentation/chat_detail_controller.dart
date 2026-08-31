@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -247,26 +247,28 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   }
 
   /// Sends a picked-and-already-compressed image as a new message,
-  /// optimistically — same local-placeholder pattern as [send],
-  /// just carrying a local file path in [Message.mediaUrl] instead of
-  /// text in [Message.body] until the upload resolves. The bubble
-  /// renders that local (plaintext, never-encrypted) path directly via
-  /// `Image.file` while `status == sending`/`failed`; once it's `sent`,
-  /// rendering switches to fetching and decrypting the server copy (see
-  /// `_ImageContent` in chat_detail_screen.dart) — the file itself is
-  /// only ever encrypted in transit/at rest, never on this device.
-  Future<void> sendImage(String localPath) => _sendMedia(localPath, 'image');
+  /// optimistically — same local-placeholder pattern as [send], just
+  /// carrying the plaintext image bytes in [Message.localBytes] instead
+  /// of text in [Message.body] until the upload resolves. The bubble
+  /// renders those bytes directly via `Image.memory` while
+  /// `status == sending`/`failed`; once it's `sent`, rendering switches
+  /// to fetching and decrypting the server copy (see `_ImageContent` in
+  /// chat_media_content.dart) — the bytes themselves are only ever
+  /// encrypted in transit/at rest, never on this device. Bytes, not a
+  /// local file path, is what makes this work on Web too — see
+  /// `Message.localBytes`'s doc comment.
+  Future<void> sendImage(Uint8List bytes) => _sendMedia(bytes, 'image');
 
   /// Same as [sendImage], for a picked-and-already-compressed video.
-  Future<void> sendVideo(String localPath) => _sendMedia(localPath, 'video');
+  Future<void> sendVideo(Uint8List bytes) => _sendMedia(bytes, 'video');
 
   /// Same as [sendImage]/[sendVideo], for a just-finished voice
-  /// recording — [localPath] is the AAC file `AudioRecorderService`
-  /// wrote directly (no separate compression step; voice recordings are
-  /// already small at the bitrate `AudioRecorderService` records at).
-  Future<void> sendAudio(String localPath) => _sendMedia(localPath, 'audio');
+  /// recording's bytes (no separate compression step; voice recordings
+  /// are already small at the bitrate `AudioRecorderService` records
+  /// at).
+  Future<void> sendAudio(Uint8List bytes) => _sendMedia(bytes, 'audio');
 
-  Future<void> _sendMedia(String localPath, String type) async {
+  Future<void> _sendMedia(Uint8List bytes, String type) async {
     final tempId = 'local-${_tempIdCounter++}';
     final myId = _ref.read(sessionControllerProvider).user?.id;
     final optimistic = Message(
@@ -274,25 +276,29 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
       chatId: _chatId,
       senderId: myId,
       type: type,
-      mediaUrl: localPath,
+      localBytes: bytes,
       createdAt: DateTime.now(),
       status: MessageStatus.sending,
     );
     _appendLocal(optimistic);
-    await _attemptMediaSend(tempId, localPath, type);
+    await _attemptMediaSend(tempId, bytes, type);
   }
 
-  /// Retries a `failed` image/video send in place — mirrors [retry], just
-  /// for media. [localPath] is the same local (plaintext) file the
-  /// original attempt used (the caller — the bubble's retry affordance —
-  /// already has it from the failed message's own [Message.mediaUrl]),
-  /// so this re-tries the exact same already-compressed file rather than
-  /// re-picking or re-compressing. The message's `type` is looked up from
-  /// the still-`failed` entry already in [state] rather than asked of the
-  /// caller, since it's already known.
-  Future<void> retryMedia(String tempId, String localPath) async {
+  /// Retries a `failed` image/video/audio send in place — mirrors
+  /// [retry], just for media. The bytes are read back off the still-
+  /// `failed` entry already in [state] (via [Message.localBytes]) rather
+  /// than asked of the caller, since a retry re-sends the exact same
+  /// already-compressed bytes, never re-picks or re-compresses — same
+  /// reasoning as [_typeOf] below for `type`.
+  Future<void> retryMedia(String tempId) async {
+    final bytes = _localBytesOf(tempId);
+    if (bytes == null) {
+      // The message this refers to is gone from state, or was never a
+      // local media placeholder to begin with — nothing sane to retry.
+      return;
+    }
     _setLocalStatus(tempId, MessageStatus.sending);
-    await _attemptMediaSend(tempId, localPath, _typeOf(tempId));
+    await _attemptMediaSend(tempId, bytes, _typeOf(tempId));
   }
 
   String _typeOf(String messageId) {
@@ -303,9 +309,17 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
     return 'image';
   }
 
+  Uint8List? _localBytesOf(String messageId) {
+    final current = state.valueOrNull ?? const [];
+    for (final message in current) {
+      if (message.id == messageId) return message.localBytes;
+    }
+    return null;
+  }
+
   Future<void> _attemptMediaSend(
     String tempId,
-    String localPath,
+    Uint8List plaintextBytes,
     String type,
   ) async {
     final key = _chatKey;
@@ -315,7 +329,6 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
       return;
     }
     try {
-      final plaintextBytes = await File(localPath).readAsBytes();
       final encryptedBytes = await _encryptionService.encryptBytes(
         key,
         plaintextBytes,
