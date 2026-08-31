@@ -52,7 +52,7 @@ class _EditMessageDialogState extends ConsumerState<_EditMessageDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = e is ApiException ? e.message : 'Something went wrong.';
+        _error = errorMessageFor(e);
       });
     }
   }

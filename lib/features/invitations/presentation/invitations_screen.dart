@@ -42,9 +42,7 @@ class _ReceivedTab extends ConsumerWidget {
     return state.when(
       loading: () => const LoadingView(),
       error: (error, _) => ErrorStateView(
-        message: error is ApiException
-            ? error.message
-            : 'Something went wrong.',
+        message: errorMessageFor(error),
         onRetry: () =>
             ref.read(receivedInvitationsControllerProvider.notifier).refresh(),
       ),
@@ -123,9 +121,7 @@ class _SentTab extends ConsumerWidget {
     return state.when(
       loading: () => const LoadingView(),
       error: (error, _) => ErrorStateView(
-        message: error is ApiException
-            ? error.message
-            : 'Something went wrong.',
+        message: errorMessageFor(error),
         onRetry: () =>
             ref.read(sentInvitationsControllerProvider.notifier).refresh(),
       ),

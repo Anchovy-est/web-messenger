@@ -91,7 +91,7 @@ class _CreatePollDialogState extends ConsumerState<_CreatePollDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = e is ApiException ? e.message : 'Something went wrong.';
+        _error = errorMessageFor(e);
       });
     }
   }

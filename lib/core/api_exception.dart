@@ -111,3 +111,15 @@ class ApiException implements Exception {
   @override
   String toString() => message;
 }
+
+/// The message to show for any caught error: an [ApiException]'s own
+/// [ApiException.message] when it is one, or a generic fallback for
+/// anything else (an unexpected, non-API failure — every catch clause in
+/// this app is deliberately broad enough to reach this fallback rather
+/// than only handling `ApiException`, so a failure that isn't one still
+/// gets *some* visible feedback instead of none — see e.g.
+/// `_EditMessageDialog._save`'s doc comment for why). One shared spot for
+/// this exact ternary, instead of it being repeated at every catch site
+/// across the app.
+String errorMessageFor(Object error) =>
+    error is ApiException ? error.message : 'Something went wrong.';

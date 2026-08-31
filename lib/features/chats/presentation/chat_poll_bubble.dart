@@ -55,10 +55,9 @@ class _PollContentState extends ConsumerState<_PollContent> {
       // SnackBar, nothing wrong-looking on screen, just a tap that
       // quietly did nothing.
       if (!mounted) return;
-      final message = e is ApiException ? e.message : 'Something went wrong.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      ).showSnackBar(SnackBar(content: Text(errorMessageFor(e))));
     } finally {
       if (mounted) setState(() => _isVoting = false);
     }
@@ -185,12 +184,18 @@ class _PollOptionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final fraction = totalVotes == 0 ? 0.0 : option.voteCount / totalVotes;
-    final fillColor =
-        (isMine ? Colors.white : Theme.of(context).colorScheme.primary)
-            .withValues(alpha: isSelected ? 0.35 : 0.16);
+    // `onPrimary` (not a literal white) for a bubble on `colors.primary`
+    // (my own messages — see `_MessageBubble`), same theme token that
+    // bubble's own status icon/timestamp text already uses — so this
+    // still contrasts correctly against `primary` under a theme where
+    // that isn't a dark color close to white's natural pairing (e.g.
+    // this app's own light Floral theme).
+    final accentColor = isMine ? colors.onPrimary : colors.primary;
+    final fillColor = accentColor.withValues(alpha: isSelected ? 0.35 : 0.16);
     final borderColor = isSelected
-        ? (isMine ? Colors.white : Theme.of(context).colorScheme.primary)
+        ? accentColor
         : textColor.withValues(alpha: 0.35);
 
     return Material(

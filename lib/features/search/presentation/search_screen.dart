@@ -75,11 +75,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
 
     if (state.hasError) {
-      final error = state.error;
-      final message = error is ApiException
-          ? error.message
-          : 'Something went wrong.';
-      return EmptyStateView(icon: Icons.error_outline, text: message);
+      return EmptyStateView(
+        icon: Icons.error_outline,
+        text: errorMessageFor(state.error!),
+      );
     }
 
     final users = state.value ?? const [];
@@ -133,10 +132,9 @@ class _SearchResultTileState extends ConsumerState<_SearchResultTile> {
       // ALREADY_IN_CHAT / INVITATION_ALREADY_PENDING both explain
       // themselves via e.message — this doesn't navigate to the existing
       // chat, so a snackbar is the full treatment for now.
-      final message = e is ApiException ? e.message : 'Something went wrong.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      ).showSnackBar(SnackBar(content: Text(errorMessageFor(e))));
     }
   }
 

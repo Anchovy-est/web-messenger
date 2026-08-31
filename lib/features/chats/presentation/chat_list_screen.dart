@@ -156,9 +156,7 @@ class _ActiveTab extends ConsumerWidget {
     return state.when(
       loading: () => const LoadingView(),
       error: (error, _) => ErrorStateView(
-        message: error is ApiException
-            ? error.message
-            : 'Something went wrong.',
+        message: errorMessageFor(error),
         onRetry: () =>
             ref.read(activeChatsControllerProvider.notifier).refresh(),
       ),
@@ -213,9 +211,7 @@ class _ArchivedTab extends ConsumerWidget {
     return state.when(
       loading: () => const LoadingView(),
       error: (error, _) => ErrorStateView(
-        message: error is ApiException
-            ? error.message
-            : 'Something went wrong.',
+        message: errorMessageFor(error),
         onRetry: () =>
             ref.read(archivedChatsControllerProvider.notifier).refresh(),
       ),

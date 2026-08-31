@@ -495,12 +495,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       // still tell the user their delete didn't go through, rather than
       // failing with no visible feedback at all.
       if (!mounted) return;
-      final errorMessage = e is ApiException
-          ? e.message
-          : 'Something went wrong.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(errorMessage)));
+      ).showSnackBar(SnackBar(content: Text(errorMessageFor(e))));
     }
   }
 
@@ -763,9 +760,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             child: state.when(
               loading: () => const LoadingView(),
               error: (error, _) => ErrorStateView(
-                message: error is ApiException
-                    ? error.message
-                    : 'Something went wrong.',
+                message: errorMessageFor(error),
                 onRetry: () => ref
                     .read(chatDetailControllerProvider(widget.chatId).notifier)
                     .refresh(),
