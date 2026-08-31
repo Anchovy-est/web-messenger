@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../core/responsive/breakpoints.dart';
 import '../features/auth/presentation/session_controller.dart';
+import '../features/chats/presentation/chat_detail_screen.dart';
 import '../features/chats/presentation/chat_list_screen.dart';
+import '../features/chats/presentation/open_chat_panels_controller.dart';
 import '../features/invitations/presentation/invitations_screen.dart';
 import '../features/search/presentation/search_screen.dart';
 import '../widgets/desktop_dialog.dart';
@@ -20,8 +22,12 @@ import '../widgets/user_avatar.dart';
 ///
 /// On a wider window this adds the persistent sidebar + master-detail
 /// chrome that makes the app feel like a real desktop messenger instead
-/// of a stretched phone screen: chats get a list pane and an inline
-/// detail pane side by side (see [_MessagingPane]), while every other
+/// of a stretched phone screen: chats get a list pane beside one or more
+/// simultaneously open chat panels (see [_MessagingPane] and
+/// [openChatPanelsProvider]) — clicking a chat opens it alongside
+/// whichever others are already open, rather than replacing them, so two
+/// (or more) conversations can be read and replied to side by side; each
+/// panel closes independently via its own close button. Every other
 /// destination (Search, Invitations, Profile) is reached from the
 /// sidebar — Search/Invitations as a quick desktop dialog (see
 /// `showDesktopDialog`), Profile (and Edit profile, reached from within
@@ -54,7 +60,7 @@ class AppShell extends ConsumerWidget {
           const VerticalDivider(width: 1, thickness: 1),
           Expanded(
             child: isMessagingRoute
-                ? _MessagingPane(state: state, detail: child)
+                ? _MessagingPane(state: state)
                 : Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 960),
@@ -147,25 +153,118 @@ class _Sidebar extends ConsumerWidget {
   }
 }
 
-/// The desktop master-detail chat view: a fixed-width chat-list pane
-/// (built on the exact same [ChatListBody] the mobile [ChatListScreen]
-/// uses) beside whatever the currently-matched route's detail pane is —
-/// [detail] itself (already the real `ChatDetailScreen` `ShellRoute`
-/// built for `/chats/:id`) when a chat is open, or a plain placeholder at
-/// `/`. Selecting a chat here updates the URL via `context.go` rather
-/// than pushing — there's no "back" to navigate to on desktop, since the
-/// list stays on screen the whole time; see [ChatListBody]'s own doc
-/// comment.
-class _MessagingPane extends StatelessWidget {
-  const _MessagingPane({required this.state, required this.detail});
+/// Every simultaneously open chat panel is given this much width; once
+/// there isn't room for all of them at once, the panel row scrolls
+/// horizontally instead of squeezing any one panel narrower than this —
+/// see [_MessagingPane]'s `LayoutBuilder`.
+const _minPanelWidth = 380.0;
+
+/// The desktop chat view: a fixed-width chat-list pane (built on the
+/// exact same [ChatListBody] the mobile [ChatListScreen] uses) beside
+/// one [ChatDetailScreen] per entry in [openChatPanelsProvider] — this
+/// is what lets two or more conversations be open, visible, and
+/// independently usable on the same page at once (each is its own
+/// `ChatDetailScreen`/`ChatDetailController` instance, so each keeps
+/// receiving and sending on its own regardless of what the others are
+/// doing). Selecting a chat in the list updates the URL via
+/// `context.go` — [_MessagingPaneState.didUpdateWidget] is what turns
+/// that into "make sure this chat has an open panel" and scrolls it
+/// into view, so a plain chat-tile tap is all a caller ever needs to do;
+/// nothing here needs to be told separately to "open a panel". A panel
+/// closes independently via the close button [ChatDetailScreen] shows
+/// when given `onClose` — closing the one the URL currently points at
+/// also navigates back to `/`, so the two don't fight (see
+/// [_MessagingPaneState._closePanel]).
+///
+/// When there's room, every open panel gets an equal share of the
+/// available width, matching this phase's mockup; once there are more
+/// panels than comfortably fit, the row scrolls horizontally instead so
+/// no panel ever gets squeezed below [_minPanelWidth].
+class _MessagingPane extends ConsumerStatefulWidget {
+  const _MessagingPane({required this.state});
 
   final GoRouterState state;
-  final Widget detail;
+
+  @override
+  ConsumerState<_MessagingPane> createState() => _MessagingPaneState();
+}
+
+class _MessagingPaneState extends ConsumerState<_MessagingPane> {
+  final _panelsScrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromRoute());
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessagingPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.state.pathParameters['id'] !=
+        oldWidget.state.pathParameters['id']) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromRoute());
+    }
+  }
+
+  @override
+  void dispose() {
+    _panelsScrollController.dispose();
+    super.dispose();
+  }
+
+  /// Makes sure the URL's current chat (if any) has an open panel —
+  /// covers both a chat-list tap (which just calls `context.go`, same as
+  /// it always has) and landing straight on `/chats/:id` from a fresh
+  /// deep link — then scrolls that panel into view. Deliberately never
+  /// *closes* panels the URL doesn't mention: navigating to `/` (e.g.
+  /// the sidebar's "Chats" destination) or to some other still-open
+  /// chat must not silently discard every other panel the user has open.
+  void _syncFromRoute() {
+    if (!mounted) return;
+    final chatId = widget.state.pathParameters['id'];
+    if (chatId == null) return;
+    final extra = widget.state.extra as Map<String, dynamic>?;
+    ref
+        .read(openChatPanelsProvider.notifier)
+        .open(
+          OpenChatPanel(
+            id: chatId,
+            title: extra?['title'] as String?,
+            avatarUrl: extra?['avatarUrl'] as String?,
+          ),
+        );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToPanel(chatId));
+  }
+
+  void _scrollToPanel(String chatId) {
+    if (!mounted || !_panelsScrollController.hasClients) return;
+    final panels = ref.read(openChatPanelsProvider);
+    final index = panels.indexWhere((p) => p.id == chatId);
+    if (index == -1) return;
+    final target = index * (_minPanelWidth + 1); // +1 for each divider
+    _panelsScrollController.animateTo(
+      target.clamp(0, _panelsScrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _closePanel(String chatId) {
+    ref.read(openChatPanelsProvider.notifier).close(chatId);
+    // The URL was pointing at exactly the panel that just closed — move
+    // it back to `/` so a chat-list tap on the same chat (or a page
+    // reload) doesn't just re-open the panel this close button was
+    // supposed to get rid of.
+    if (widget.state.pathParameters['id'] == chatId) {
+      context.go('/');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final selectedChatId = state.pathParameters['id'];
-    final hasOpenChat = selectedChatId != null;
+    final panels = ref.watch(openChatPanelsProvider);
+    final selectedChatId = widget.state.pathParameters['id'];
 
     return DefaultTabController(
       length: 2,
@@ -200,9 +299,84 @@ class _MessagingPane extends StatelessWidget {
             ),
           ),
           const VerticalDivider(width: 1, thickness: 1),
-          Expanded(child: hasOpenChat ? detail : const _NoChatSelectedView()),
+          Expanded(
+            child: panels.isEmpty
+                ? const _NoChatSelectedView()
+                : _PanelRow(
+                    panels: panels,
+                    scrollController: _panelsScrollController,
+                    onClose: _closePanel,
+                  ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// Lays out every open panel, sized either as an equal `Expanded` share
+/// (when they all fit at [_minPanelWidth] or wider) or as a fixed-width,
+/// horizontally scrolling row (once they wouldn't) — recomputed on every
+/// build via `LayoutBuilder`, so resizing the window across that
+/// threshold, or opening/closing a panel, always re-settles into
+/// whichever layout actually fits.
+class _PanelRow extends StatelessWidget {
+  const _PanelRow({
+    required this.panels,
+    required this.scrollController,
+    required this.onClose,
+  });
+
+  final List<OpenChatPanel> panels;
+  final ScrollController scrollController;
+  final ValueChanged<String> onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fitsWithoutScrolling =
+            panels.length * _minPanelWidth <= constraints.maxWidth;
+
+        final row = Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (index, panel) in panels.indexed) ...[
+              fitsWithoutScrolling
+                  ? Expanded(child: _panelFor(panel))
+                  : SizedBox(width: _minPanelWidth, child: _panelFor(panel)),
+              if (index < panels.length - 1)
+                const VerticalDivider(width: 1, thickness: 1),
+            ],
+          ],
+        );
+
+        if (fitsWithoutScrolling) return row;
+        return Scrollbar(
+          controller: scrollController,
+          child: SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: row,
+          ),
+        );
+      },
+    );
+  }
+
+  // Keyed by chat id — without this, closing a panel in the middle of
+  // the row would shift every panel after it into a new list index, and
+  // Flutter would happily reuse each `ChatDetailScreen`'s *State* (its
+  // scroll position, its search box, its in-progress recording, …)
+  // across what is, as far as the user's concerned, a completely
+  // different chat.
+  Widget _panelFor(OpenChatPanel panel) {
+    return ChatDetailScreen(
+      key: ValueKey(panel.id),
+      chatId: panel.id,
+      title: panel.title,
+      avatarUrl: panel.avatarUrl,
+      onClose: () => onClose(panel.id),
     );
   }
 }

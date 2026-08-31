@@ -72,11 +72,22 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
     required this.chatId,
     this.title,
     this.avatarUrl,
+    this.onClose,
   });
 
   final String chatId;
   final String? title;
   final String? avatarUrl;
+
+  /// Shows a close (✕) button in the app bar when non-null, and calls it
+  /// on tap — used only when this screen is one of several simultaneous
+  /// panels on a large window (see `AppShell`'s `_MessagingPane`), to
+  /// let that panel be dismissed without navigating away from anything
+  /// else. `null` (the default) everywhere else — a phone's single,
+  /// full-screen chat is left/back-navigated, not "closed", and the
+  /// single desktop panel driven directly by the URL has nothing else on
+  /// screen to return this closed chat's space to.
+  final VoidCallback? onClose;
 
   @override
   ConsumerState<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -731,6 +742,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                             )
                             .toggle(),
                 ),
+                if (widget.onClose != null)
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Close chat',
+                    onPressed: widget.onClose,
+                  ),
               ],
             ),
       body: Column(

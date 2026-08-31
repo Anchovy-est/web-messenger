@@ -27,6 +27,11 @@ const _me = User(
 );
 
 const _bob = ChatParticipant(id: 'bob', username: 'bob', displayName: 'bob');
+const _carol = ChatParticipant(
+  id: 'carol',
+  username: 'carol',
+  displayName: 'carol',
+);
 
 class _FakeAuthRepository extends AuthRepository {
   _FakeAuthRepository() : super(ApiClient());
@@ -48,19 +53,26 @@ class _FakeAuthRepository extends AuthRepository {
 class _FakeChatRepository extends ChatRepository {
   _FakeChatRepository() : super(ApiClient());
 
-  final _chat = Chat(
+  final _chatBob = Chat(
     id: 'c1',
     isGroup: false,
     createdAt: DateTime(2026, 1, 1),
     otherParticipant: _bob,
   );
+  final _chatCarol = Chat(
+    id: 'c2',
+    isGroup: false,
+    createdAt: DateTime(2026, 1, 1),
+    otherParticipant: _carol,
+  );
 
   @override
   Future<List<Chat>> listChats({required bool archived}) async =>
-      archived ? const [] : [_chat];
+      archived ? const [] : [_chatBob, _chatCarol];
 
   @override
-  Future<Chat> getChat(String chatId) async => _chat;
+  Future<Chat> getChat(String chatId) async =>
+      chatId == _chatCarol.id ? _chatCarol : _chatBob;
 }
 
 /// Enough of [MessageRepository] for `ChatDetailScreen` to mount cleanly
@@ -161,4 +173,105 @@ void main() {
     // The chat list is still there, underneath the dialog.
     expect(find.text('bob'), findsOneWidget);
   });
+
+  // --- Phase 11: multiple simultaneous chat panels --------------------
+
+  testWidgets(
+    'opening a second chat keeps the first one open alongside it, not '
+    'replaced by it',
+    (tester) async {
+      await _pumpDesktopApp(tester);
+
+      await tester.tap(find.text('bob'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('carol'));
+      await tester.pumpAndSettle();
+
+      // Two open panels — each app bar's mute button is unique to
+      // `ChatDetailScreen`, so its count is exactly "how many panels are
+      // open" regardless of what else is on screen.
+      expect(find.byIcon(Icons.notifications_none), findsNWidgets(2));
+      // The chat list pane is still visible alongside both.
+      expect(find.text('Select a chat to start messaging'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'each open panel is its own independent chat, not two views of the '
+    'same one',
+    (tester) async {
+      await _pumpDesktopApp(tester);
+
+      await tester.tap(find.text('bob'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('carol'));
+      await tester.pumpAndSettle();
+
+      // "bob"/"carol" each now appear twice — once as their own list
+      // tile, once as their own panel's app-bar title.
+      expect(find.text('bob'), findsNWidgets(2));
+      expect(find.text('carol'), findsNWidgets(2));
+    },
+  );
+
+  testWidgets('closing one panel leaves the other open and untouched', (
+    tester,
+  ) async {
+    await _pumpDesktopApp(tester);
+
+    await tester.tap(find.text('bob'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('carol'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.notifications_none), findsNWidgets(2));
+
+    // Panels render left to right in the order they were opened —
+    // bob's was opened first, so its close button is the first match.
+    await tester.tap(find.byIcon(Icons.close).first);
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.notifications_none), findsOneWidget);
+    // carol's panel is the one still standing.
+    expect(find.text('carol'), findsNWidgets(2));
+    // The chat list itself is unaffected by closing a panel — bob is
+    // still a selectable tile, just with no open panel of his own any
+    // more.
+    expect(find.text('bob'), findsOneWidget);
+  });
+
+  testWidgets('closing the only open panel returns to the no-chat-selected '
+      'placeholder', (tester) async {
+    await _pumpDesktopApp(tester);
+
+    await tester.tap(find.text('bob'));
+    await tester.pumpAndSettle();
+    expect(find.text('Select a chat to start messaging'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select a chat to start messaging'), findsOneWidget);
+  });
+
+  testWidgets(
+    're-selecting an already-open chat brings it into view rather than '
+    'opening a second copy of it',
+    (tester) async {
+      await _pumpDesktopApp(tester);
+
+      await tester.tap(find.text('bob'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('carol'));
+      await tester.pumpAndSettle();
+      // Both panels are open now, so "bob" matches twice (the list tile
+      // and bob's own panel's app bar title) — `.first` is the list
+      // tile, since the list pane is built before the panels.
+      await tester.tap(find.text('bob').first);
+      await tester.pumpAndSettle();
+
+      // Still exactly two panels — tapping bob again didn't add a
+      // duplicate.
+      expect(find.byIcon(Icons.notifications_none), findsNWidgets(2));
+    },
+  );
 }
