@@ -3,12 +3,17 @@
 // and who's in them.
 const { query } = require('../config/db');
 
-async function createChat({ isGroup = false, createdBy }) {
+// `name` is only ever meaningful for a group chat — a 1:1 chat's display
+// name is derived client-side from the other participant (see
+// `toPublicChat`'s `otherParticipant`), so every existing call site
+// (1:1 invitations) simply omits it and gets the column's natural
+// `NULL`, unchanged from before groups existed.
+async function createChat({ isGroup = false, createdBy, name = null }) {
   const result = await query(
-    `INSERT INTO chats (is_group, created_by)
-     VALUES ($1, $2)
+    `INSERT INTO chats (is_group, created_by, name)
+     VALUES ($1, $2, $3)
      RETURNING *`,
-    [isGroup, createdBy]
+    [isGroup, createdBy, name]
   );
   return result.rows[0];
 }
@@ -44,10 +49,22 @@ async function findDirectChatBetween(userIdA, userIdB) {
 }
 
 // Shared shape for both the list and single-chat lookups: who the other
-// 1:1 participant is, and the most recent (non-deleted) message — which
+// participant(s) are, and the most recent (non-deleted) message — which
 // doubles as the sort key. A chat with no messages yet just sorts by its
 // own created_at, and this same query reflects real activity the moment
 // messages start landing, with no changes needed here.
+//
+// `other` (a single row) and `participants` (an array) are deliberately
+// split by `is_group`, not just "whichever has data": a 1:1 chat's
+// `otherParticipant` shape predates group chats and every existing
+// client relies on it exactly as-is, so it stays scoped to `NOT
+// c.is_group` rather than, say, becoming "the first of possibly several
+// participants" once a chat has more than one other member — that would
+// silently start returning an arbitrary participant instead of a group's
+// actual roster. `participants` is the group equivalent — everyone
+// *except* the caller, however many there are — and only ever populated
+// for a group, so a 1:1 chat's payload isn't carrying a redundant
+// single-element array alongside `otherParticipant`.
 const CHAT_SELECT = `
   SELECT
     c.id, c.is_group, c.name, c.created_at,
@@ -58,6 +75,7 @@ const CHAT_SELECT = `
     other.display_name AS other_display_name,
     other.avatar_url AS other_avatar_url,
     other.public_key AS other_public_key,
+    grp.participants AS participants,
     lm.id AS last_message_id,
     lm.body AS last_message_body,
     lm.type AS last_message_type,
@@ -70,9 +88,21 @@ const CHAT_SELECT = `
     SELECT u.id, u.username, u.display_name, u.avatar_url, u.public_key
     FROM chat_participants other_cp
     JOIN users u ON u.id = other_cp.user_id
-    WHERE other_cp.chat_id = c.id AND other_cp.user_id != $1
+    WHERE other_cp.chat_id = c.id AND other_cp.user_id != $1 AND NOT c.is_group
     LIMIT 1
   ) other ON true
+  LEFT JOIN LATERAL (
+    SELECT json_agg(json_build_object(
+      'id', u.id,
+      'username', u.username,
+      'displayName', u.display_name,
+      'avatarUrl', u.avatar_url,
+      'publicKey', u.public_key
+    ) ORDER BY u.username) AS participants
+    FROM chat_participants grp_cp
+    JOIN users u ON u.id = grp_cp.user_id
+    WHERE grp_cp.chat_id = c.id AND grp_cp.user_id != $1 AND c.is_group
+  ) grp ON true
   LEFT JOIN LATERAL (
     SELECT id, body, type, sender_id, created_at
     FROM messages m
@@ -105,6 +135,11 @@ function toPublicChat(row) {
           publicKey: row.other_public_key,
         }
       : null,
+    // Every other participant of a *group* chat — null (not an empty
+    // array) for a 1:1 chat, mirroring `otherParticipant`'s own "null
+    // means not applicable" convention rather than conflating "no other
+    // members" with "this isn't a group".
+    participants: row.participants ?? null,
     lastMessage: row.last_message_id
       ? {
           id: row.last_message_id,
@@ -188,18 +223,32 @@ async function isMuted(chatId, userId) {
   return Boolean(result.rows[0]?.muted_at);
 }
 
-// The other participant of a 1:1 chat — i.e. "who should be notified
-// about something `userId` just did in this chat". Null if `userId`
-// is somehow the only participant (a still-pending, not-yet-accepted
-// invitation's chat — push.service.js has nothing to notify in that
-// case, which is correct: nobody's a recipient of a chat they haven't
-// joined yet).
-async function getOtherParticipantId(chatId, userId) {
+// Every other participant of a chat — i.e. "who should be notified
+// about something `userId` just did in this chat". For a 1:1 chat
+// that's at most one id; for a group, everyone else currently in it.
+// Empty if `userId` is somehow the only participant (a still-pending,
+// not-yet-accepted invitation's chat — push.service.js has nothing to
+// notify in that case, which is correct: nobody's a recipient of a chat
+// they haven't joined yet).
+async function getOtherParticipantIds(chatId, userId) {
   const result = await query(
-    'SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2 LIMIT 1',
+    'SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2',
     [chatId, userId]
   );
-  return result.rows[0]?.user_id ?? null;
+  return result.rows.map((row) => row.user_id);
+}
+
+// Membership check used to authorize group-only actions (inviting more
+// people to an existing group — see invitation.service.js
+// `inviteToChat`) — a plain boolean is enough here; `chatService.getChat`
+// is what full read/write operations use instead, since those also need
+// the chat's own data back, not just a yes/no.
+async function isParticipant(chatId, userId) {
+  const result = await query(
+    'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+    [chatId, userId]
+  );
+  return result.rows.length > 0;
 }
 
 module.exports = {
@@ -212,5 +261,6 @@ module.exports = {
   setArchived,
   setMuted,
   isMuted,
-  getOtherParticipantId,
+  getOtherParticipantIds,
+  isParticipant,
 };

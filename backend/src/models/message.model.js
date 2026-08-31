@@ -4,9 +4,16 @@
 const { query } = require('../config/db');
 
 // Status is an objective property of the message, not "as seen by the
-// caller": for a 1:1 chat there's exactly one possible recipient per
-// message (whoever isn't the sender), so `recv_delivered_at`/
-// `recv_read_at` mean the same thing regardless of who's asking.
+// caller": it's `delivered`/`read` only once *every* other participant
+// has it delivered/read, not just whichever one happens to be asking —
+// for a 1:1 chat that's exactly the one other person (this is exactly
+// the check this app has always done, just phrased as "all N of the
+// other participants" instead of hard-coding N=1), and for a group it's
+// everyone, matching how most group-chat apps show a single tick state
+// per message rather than a separate one per recipient. A recipient
+// with no `message_receipts` row yet (hasn't fetched/acked this message
+// at all) counts as "not delivered" for them, same as an explicit NULL
+// timestamp would.
 //
 // `deletedAt` is included in the public shape (unlike, say, an internal
 // audit column) because a deleted message doesn't disappear from a
@@ -14,7 +21,7 @@ const { query } = require('../config/db');
 // and the client needs `deletedAt` to know to render it as one instead
 // of showing its (now-nulled) body.
 function toPublicMessage(row) {
-  const status = row.recv_read_at ? 'read' : row.recv_delivered_at ? 'delivered' : 'sent';
+  const status = row.recv_all_read ? 'read' : row.recv_all_delivered ? 'delivered' : 'sent';
   return {
     id: row.id,
     chatId: row.chat_id,
@@ -30,13 +37,17 @@ function toPublicMessage(row) {
 }
 
 const MESSAGE_SELECT = `
-  SELECT m.*, recv.delivered_at AS recv_delivered_at, recv.read_at AS recv_read_at
+  SELECT m.*,
+    recv.all_delivered AS recv_all_delivered,
+    recv.all_read AS recv_all_read
   FROM messages m
   LEFT JOIN LATERAL (
-    SELECT delivered_at, read_at
-    FROM message_receipts mr
-    WHERE mr.message_id = m.id AND mr.user_id != m.sender_id
-    LIMIT 1
+    SELECT
+      bool_and(mr.delivered_at IS NOT NULL) AS all_delivered,
+      bool_and(mr.read_at IS NOT NULL) AS all_read
+    FROM chat_participants cp
+    LEFT JOIN message_receipts mr ON mr.message_id = m.id AND mr.user_id = cp.user_id
+    WHERE cp.chat_id = m.chat_id AND cp.user_id != m.sender_id
   ) recv ON true
 `;
 
@@ -105,14 +116,19 @@ async function listForChat(chatId, { limit = 50, before } = {}) {
 // non-regressing: re-marking delivered never clears an existing read_at,
 // and re-marking read never resets an existing timestamp to "now".
 //
-// Returns the ids of every message that IS now at least the requested
-// status for this user (not just the ones this call changed) — re-
-// announcing an already-reached status is harmless for a caller that
-// just wants to push a status update, and saves tracking a separate
-// "what actually changed" set. The one exception: a delivered-only pass
-// excludes messages already read, so it never reports a downgrade.
+// Returns the ids of every message that's now, *as a whole* (see
+// `toPublicMessage`'s doc comment on why that means "every other
+// participant", not just `userId`), at least the requested status —
+// for a 1:1 chat that's the same thing as "did `userId`'s own ack just
+// reach that status", but for a group, one more person acking doesn't
+// necessarily flip the message's overall status yet if others still
+// haven't. Re-announcing an already-reached status is harmless for a
+// caller that just wants to push a status update, and saves tracking a
+// separate "what actually changed" set. The one exception: a
+// delivered-only pass excludes messages already (fully) read, so it
+// never reports a downgrade.
 async function markReceipt(chatId, userId, { read = false } = {}) {
-  const result = await query(
+  const upserted = await query(
     `INSERT INTO message_receipts (message_id, user_id, delivered_at, read_at)
      SELECT m.id, $2, now(), ${read ? 'now()' : 'NULL'}
      FROM messages m
@@ -123,14 +139,34 @@ async function markReceipt(chatId, userId, { read = false } = {}) {
      ON CONFLICT (message_id, user_id) DO UPDATE SET
        delivered_at = COALESCE(message_receipts.delivered_at, EXCLUDED.delivered_at),
        read_at = COALESCE(message_receipts.read_at, EXCLUDED.read_at)
-     RETURNING message_id, (read_at IS NOT NULL) AS is_read`,
+     RETURNING message_id`,
     [chatId, userId]
   );
-  const rows = read ? result.rows : result.rows.filter((row) => !row.is_read);
-  return {
-    messageIds: rows.map((row) => row.message_id),
-    status: read ? 'read' : 'delivered',
-  };
+  const touchedIds = upserted.rows.map((row) => row.message_id);
+  if (touchedIds.length === 0) {
+    return { messageIds: [], status: read ? 'read' : 'delivered' };
+  }
+
+  // Only re-checked for the messages this call actually touched — not
+  // every message in the chat — so a message that reached "all
+  // delivered"/"all read" earlier, via someone else's ack, isn't
+  // re-announced on every subsequent, unrelated markReceipt call.
+  const aggregate = await query(
+    `SELECT m.id AS message_id,
+       bool_and(mr.delivered_at IS NOT NULL) AS all_delivered,
+       bool_and(mr.read_at IS NOT NULL) AS all_read
+     FROM messages m
+     JOIN chat_participants cp ON cp.chat_id = m.chat_id AND cp.user_id != m.sender_id
+     LEFT JOIN message_receipts mr ON mr.message_id = m.id AND mr.user_id = cp.user_id
+     WHERE m.id = ANY($1::uuid[])
+     GROUP BY m.id`,
+    [touchedIds]
+  );
+  const messageIds = aggregate.rows
+    .filter((row) => (read ? row.all_read : row.all_delivered && !row.all_read))
+    .map((row) => row.message_id);
+
+  return { messageIds, status: read ? 'read' : 'delivered' };
 }
 
 // Caller (message.service.js `editMessage`) has already verified this

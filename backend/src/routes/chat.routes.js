@@ -3,7 +3,12 @@ const chatController = require('../controllers/chat.controller');
 const messageController = require('../controllers/message.controller');
 const { authenticate } = require('../middleware/authenticate');
 const { validateBody, validateQuery, validateParams } = require('../middleware/validate');
-const { listChatsQuerySchema, chatIdParamsSchema } = require('../schemas/chat.schema');
+const {
+  listChatsQuerySchema,
+  chatIdParamsSchema,
+  createGroupChatSchema,
+} = require('../schemas/chat.schema');
+const { sendInvitationSchema } = require('../schemas/invitation.schema');
 const {
   sendMessageSchema,
   listMessagesQuerySchema,
@@ -20,7 +25,29 @@ router.use(authenticate);
 
 router.get('/', validateQuery(listChatsQuerySchema), asyncHandler(chatController.list));
 
+// A literal path, not `/:id` — declared ahead of it regardless, since a
+// route table reads more safely when the more specific pattern comes
+// first, even though Express wouldn't actually confuse the two here
+// (this is POST, `/:id`'s neighbors below are all GET/other POSTs with
+// more path segments).
+router.post(
+  '/groups',
+  validateBody(createGroupChatSchema),
+  asyncHandler(chatController.createGroup)
+);
+
 router.get('/:id', validateParams(chatIdParamsSchema), asyncHandler(chatController.getOne));
+
+// Invites one more person to an *existing* group chat — the group
+// equivalent of POST /invitations, which only ever starts a brand-new
+// 1:1 chat (see invitation.service.js `inviteToChat`'s doc comment for
+// why the two are deliberately separate).
+router.post(
+  '/:id/invitations',
+  validateParams(chatIdParamsSchema),
+  validateBody(sendInvitationSchema),
+  asyncHandler(chatController.inviteToChat)
+);
 
 router.post(
   '/:id/archive',

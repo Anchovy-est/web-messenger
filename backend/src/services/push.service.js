@@ -99,12 +99,20 @@ async function sendToTokens(tokens, { title, body, data }) {
 // The decision logic — who should be notified about a new message, and
 // whether they've muted this chat — kept separate from the actual FCM
 // call above so it's fully testable against a real database without
-// needing real Firebase credentials (see push.service.test.js).
+// needing real Firebase credentials (see push.service.test.js). Every
+// *other* participant is a candidate — one for a 1:1 chat, however many
+// for a group — each independently filtered by their own mute state,
+// since one participant muting a group must never affect what anyone
+// else in it receives.
 async function recipientTokensForMessage(chatId, senderId) {
-  const recipientId = await chatModel.getOtherParticipantId(chatId, senderId);
-  if (!recipientId) return [];
-  if (await chatModel.isMuted(chatId, recipientId)) return [];
-  return pushTokenModel.listForUser(recipientId);
+  const recipientIds = await chatModel.getOtherParticipantIds(chatId, senderId);
+  const tokensPerRecipient = await Promise.all(
+    recipientIds.map(async (recipientId) => {
+      if (await chatModel.isMuted(chatId, recipientId)) return [];
+      return pushTokenModel.listForUser(recipientId);
+    })
+  );
+  return tokensPerRecipient.flat();
 }
 
 async function notifyNewMessage({ chatId, senderId, type }) {
@@ -119,16 +127,24 @@ async function notifyNewMessage({ chatId, senderId, type }) {
   });
 }
 
-async function notifyNewInvitation({ inviteeId, inviterId }) {
+// [groupName] is only ever passed for a group invitation (see
+// invitation.controller.js) — its presence, not a separate `isGroup`
+// flag, is what picks the notification text below, since there's
+// nothing else to branch on that a caller could get out of sync.
+async function notifyNewInvitation({ inviteeId, inviterId, groupName }) {
   const tokens = await pushTokenModel.listForUser(inviteeId);
   if (tokens.length === 0) return;
 
   const inviter = await userModel.findById(inviterId);
+  let body = 'You have a new chat invitation.';
+  if (inviter) {
+    body = groupName
+      ? `${inviter.username} invited you to "${groupName}".`
+      : `${inviter.username} wants to chat with you.`;
+  }
   await sendToTokens(tokens, {
-    title: 'New chat invitation',
-    body: inviter
-      ? `${inviter.username} wants to chat with you.`
-      : 'You have a new chat invitation.',
+    title: groupName ? 'New group invitation' : 'New chat invitation',
+    body,
     data: { type: 'invitation' },
   });
 }

@@ -45,6 +45,60 @@ async function sendInvitation(inviterId, inviteeId) {
   return invitationModel.create({ chatId: chat.id, inviterId, inviteeId });
 }
 
+// Invites someone to an *existing* chat — used both by
+// chat.service.js `createGroupChat` (inviting each initially-selected
+// participant to the group chat it just created) and by the standalone
+// "invite one more person" endpoint on an existing group. Deliberately a
+// separate function from [sendInvitation] above rather than a shared
+// one with branches: [sendInvitation] always creates a brand-new 1:1
+// chat and enforces 1:1-only rules (at most one chat, at most one
+// pending invitation, between any given pair of people); this enforces
+// the group-appropriate versions of those same rules — scoped to *this*
+// chat, since unlike a 1:1 relationship, the same two people can
+// legitimately be in several different group chats together, or have
+// more than one pending group invitation between them at once.
+async function inviteToChat(inviterId, chatId, inviteeId) {
+  if (inviterId === inviteeId) {
+    throw new ApiError(400, 'CANNOT_INVITE_SELF', 'You cannot invite yourself.');
+  }
+
+  const chat = await chatModel.findByIdForUser(chatId, inviterId);
+  if (!chat) {
+    // Same 404-hides-existence reasoning as chat.service.js `getChat` —
+    // a non-participant can't probe for a chat's existence by trying to
+    // invite someone to it.
+    throw new ApiError(404, 'CHAT_NOT_FOUND', 'Chat not found.');
+  }
+  if (!chat.isGroup) {
+    throw new ApiError(
+      400,
+      'NOT_A_GROUP_CHAT',
+      'This chat is not a group — start a new chat with an invitation instead.'
+    );
+  }
+
+  const invitee = await userModel.findById(inviteeId);
+  if (!invitee) {
+    throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+  }
+
+  if (await chatModel.isParticipant(chatId, inviteeId)) {
+    throw new ApiError(409, 'ALREADY_IN_CHAT', 'This user is already in the group.');
+  }
+
+  const existingPending = await invitationModel.findPendingForChat(chatId, inviteeId);
+  if (existingPending) {
+    throw new ApiError(
+      409,
+      'INVITATION_ALREADY_PENDING',
+      'There is already a pending invitation for this user.',
+      { invitationId: existingPending.id }
+    );
+  }
+
+  return invitationModel.create({ chatId, inviterId, inviteeId });
+}
+
 async function respondToInvitation(userId, invitationId, decision) {
   const invitation = await invitationModel.findById(invitationId);
   if (!invitation) {
@@ -88,6 +142,7 @@ async function listSent(userId, status) {
 
 module.exports = {
   sendInvitation,
+  inviteToChat,
   acceptInvitation,
   declineInvitation,
   listReceived,
