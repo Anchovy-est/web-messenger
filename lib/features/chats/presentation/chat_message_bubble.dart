@@ -6,12 +6,24 @@ class _MessageBubble extends ConsumerWidget {
     required this.isMine,
     this.onRetry,
     this.onLongPress,
+    this.searchQuery,
+    this.isCurrentMatch = false,
   });
 
   final Message message;
   final bool isMine;
   final VoidCallback? onRetry;
   final VoidCallback? onLongPress;
+
+  /// The active in-chat search query (see [MessageSearchController]), if
+  /// any — matching substrings in this message's text get a highlighted
+  /// background. `null`/empty means no search is active right now.
+  final String? searchQuery;
+
+  /// Whether this is the specific match the user has currently navigated
+  /// to via the search bar's prev/next controls — drawn with an extra
+  /// border so it stands out from the other (also-highlighted) matches.
+  final bool isCurrentMatch;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -79,6 +91,9 @@ class _MessageBubble extends ConsumerWidget {
             ? colors.primary
             : colors.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
+        border: isCurrentMatch
+            ? Border.all(color: colors.tertiary, width: 2)
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -188,8 +203,52 @@ class _MessageBubble extends ConsumerWidget {
       case 'audio':
         return _AudioContent(message: message);
       default:
-        return Text(message.body ?? '', style: TextStyle(color: textColor));
+        return _highlightedText(message.body ?? '', textColor);
     }
+  }
+
+  /// Renders [text] in [textColor], except any substring matching
+  /// [searchQuery] (case-insensitively) — the same substrings
+  /// [MessageSearchController] counted as a match in the first place —
+  /// which gets a highlighted background so it's visible at a glance.
+  Widget _highlightedText(String text, Color textColor) {
+    final query = searchQuery?.trim() ?? '';
+    if (query.isEmpty) {
+      return Text(text, style: TextStyle(color: textColor));
+    }
+
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    var start = 0;
+    while (true) {
+      final index = lowerText.indexOf(lowerQuery, start);
+      if (index == -1) {
+        spans.add(TextSpan(text: text.substring(start)));
+        break;
+      }
+      if (index > start) {
+        spans.add(TextSpan(text: text.substring(start, index)));
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(index, index + query.length),
+          style: const TextStyle(
+            backgroundColor: Colors.yellow,
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      start = index + query.length;
+    }
+
+    return Text.rich(
+      TextSpan(
+        style: TextStyle(color: textColor),
+        children: spans,
+      ),
+    );
   }
 }
 

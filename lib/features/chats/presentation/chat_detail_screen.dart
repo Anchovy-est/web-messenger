@@ -24,6 +24,7 @@ import '../../auth/presentation/session_controller.dart';
 import '../data/chat_providers.dart';
 import 'chat_detail_controller.dart';
 import 'chat_mute_controller.dart';
+import 'message_search_controller.dart';
 import 'typing_indicator_controller.dart';
 
 // This screen's supporting widgets are split across a handful of `part`
@@ -87,13 +88,56 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   Duration _recordingElapsed = Duration.zero;
   Timer? _recordingTicker;
 
+  // --- In-chat message search ---------------------------------------
+  bool _isSearching = false;
+  final _searchTextController = TextEditingController();
+  final _searchFieldFocusNode = FocusNode();
+  // One GlobalKey per rendered message, so a match's bubble — however
+  // far up the thread it is — has a BuildContext `_jumpToMessage` can
+  // hand to `Scrollable.ensureVisible`. Never pruned: bounded by however
+  // many messages this chat has loaded (a single page — see
+  // ChatDetailController), so it never grows unbounded either.
+  final _messageKeys = <String, GlobalKey>{};
+
   @override
   void dispose() {
     _textController.dispose();
     _scrollController.dispose();
     _recordingTicker?.cancel();
     _audioRecorder.dispose();
+    _searchTextController.dispose();
+    _searchFieldFocusNode.dispose();
     super.dispose();
+  }
+
+  void _openSearch() {
+    setState(() => _isSearching = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFieldFocusNode.requestFocus();
+    });
+  }
+
+  void _closeSearch() {
+    _searchTextController.clear();
+    ref.read(messageSearchControllerProvider(widget.chatId).notifier).clear();
+    setState(() => _isSearching = false);
+  }
+
+  /// Scrolls the currently-selected search match into view. Relies on
+  /// the message list being built eagerly (see `build`'s `ListView`, not
+  /// a lazy `ListView.builder`) — otherwise an off-screen match's
+  /// `GlobalKey` would have no `BuildContext` yet to scroll to.
+  void _jumpToMessage(String messageId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _messageKeys[messageId]?.currentContext;
+      if (context == null) return;
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        alignment: 0.5,
+      );
+    });
   }
 
   void _scrollToBottom() {
@@ -412,6 +456,54 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     }
   }
 
+  /// Builds one message's bubble, keyed by a per-message [GlobalKey] so
+  /// [_jumpToMessage] can scroll to it later regardless of where it is in
+  /// the (eagerly-built, see `build`'s `ListView`) thread, and wired up
+  /// to the current search state so a matching message highlights the
+  /// query text and — for whichever match is currently selected — its
+  /// whole bubble.
+  Widget _buildMessageTile(
+    Message message,
+    String? myId,
+    MessageSearchState searchState,
+  ) {
+    final isMine = message.senderId == myId;
+    // Only a message the server has actually confirmed, and that isn't
+    // already deleted, can be edited or deleted — a still-`sending`/
+    // `failed` placeholder has no real id to act on yet, and there's
+    // nothing left to edit/delete on a tombstone.
+    final canModify =
+        isMine &&
+        !message.isDeleted &&
+        const {
+          MessageStatus.sent,
+          MessageStatus.delivered,
+          MessageStatus.read,
+        }.contains(message.status);
+    return KeyedSubtree(
+      key: _messageKeys.putIfAbsent(message.id, GlobalKey.new),
+      child: _MessageBubble(
+        message: message,
+        isMine: isMine,
+        searchQuery: searchState.isActive ? searchState.query : null,
+        isCurrentMatch: message.id == searchState.selectedMessageId,
+        onRetry: message.status == MessageStatus.failed
+            ? () {
+                final notifier = ref.read(
+                  chatDetailControllerProvider(widget.chatId).notifier,
+                );
+                if (message.type == 'text') {
+                  notifier.retry(message.id, message.body ?? '');
+                } else {
+                  notifier.retryMedia(message.id);
+                }
+              }
+            : null,
+        onLongPress: canModify ? () => _showMessageActions(message) : null,
+      ),
+    );
+  }
+
   /// A human label for who's currently typing, or `null` if no one is —
   /// "typing…" for a 1:1 chat (unchanged from before groups existed,
   /// since there's only ever one possible "them"), but named for a
@@ -445,9 +537,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final typingLabel = _typingLabel(
       ref.watch(typingIndicatorProvider(widget.chatId)),
     );
+    final searchState = ref.watch(
+      messageSearchControllerProvider(widget.chatId),
+    );
 
     // Autoscroll whenever the list grows — covers both "I just sent one"
-    // and "one arrived over the socket".
+    // and "one arrived over the socket". Skipped while actively searching
+    // so a message arriving mid-search doesn't yank the view away from
+    // whatever match the user is looking at.
     ref.listen<AsyncValue<List<Message>>>(
       chatDetailControllerProvider(widget.chatId),
       (previous, next) {
@@ -456,63 +553,155 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         final grew =
             (next.valueOrNull?.length ?? 0) >
             (previous?.valueOrNull?.length ?? 0);
-        if (grew) _scrollToBottom();
+        if (grew && !_isSearching) _scrollToBottom();
+      },
+    );
+
+    // Jump to whichever match the user has navigated to — landing on a
+    // fresh search's default match, or wherever prev/next moved to.
+    ref.listen<MessageSearchState>(
+      messageSearchControllerProvider(widget.chatId),
+      (previous, next) {
+        final messageId = next.selectedMessageId;
+        if (messageId != null && messageId != previous?.selectedMessageId) {
+          _jumpToMessage(messageId);
+        }
       },
     );
 
     final muteState = ref.watch(chatMuteControllerProvider(widget.chatId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            UserAvatar(
-              avatarUrl: widget.avatarUrl,
-              radius: 16,
-              placeholderIcon: isGroup ? Icons.groups : Icons.person,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.title ?? 'Chat', overflow: TextOverflow.ellipsis),
-                  if (typingLabel != null)
-                    Text(
-                      typingLabel,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
+      appBar: _isSearching
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Close search',
+                onPressed: _closeSearch,
+              ),
+              title: TextField(
+                controller: _searchTextController,
+                focusNode: _searchFieldFocusNode,
+                textInputAction: TextInputAction.search,
+                decoration: const InputDecoration(
+                  hintText: 'Search in this chat',
+                  border: InputBorder.none,
+                ),
+                onChanged: (query) => ref
+                    .read(
+                      messageSearchControllerProvider(widget.chatId).notifier,
+                    )
+                    .updateQuery(query),
+              ),
+              actions: [
+                if (searchState.isActive)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Center(
+                      child: Text(
+                        searchState.totalMatches == 0
+                            ? '0/0'
+                            : '${searchState.selectedIndex + 1}/${searchState.totalMatches}',
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                  tooltip: 'Previous match',
+                  onPressed: searchState.totalMatches > 0
+                      ? () => ref
+                            .read(
+                              messageSearchControllerProvider(
+                                widget.chatId,
+                              ).notifier,
+                            )
+                            .previous()
+                      : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                  tooltip: 'Next match',
+                  onPressed: searchState.totalMatches > 0
+                      ? () => ref
+                            .read(
+                              messageSearchControllerProvider(
+                                widget.chatId,
+                              ).notifier,
+                            )
+                            .next()
+                      : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Clear search',
+                  onPressed: _closeSearch,
+                ),
+              ],
+            )
+          : AppBar(
+              title: Row(
+                children: [
+                  UserAvatar(
+                    avatarUrl: widget.avatarUrl,
+                    radius: 16,
+                    placeholderIcon: isGroup ? Icons.groups : Icons.person,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.title ?? 'Chat',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (typingLabel != null)
+                          Text(
+                            typingLabel,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Search in this chat',
+                  onPressed: _openSearch,
+                ),
+                // A loading/error state shows a disabled bell rather than
+                // hiding the button entirely — "there is a mute control
+                // here, it's just not ready yet" is a more honest state
+                // than the button flickering in and out of existence.
+                IconButton(
+                  icon: Icon(
+                    muteState.valueOrNull == true
+                        ? Icons.notifications_off
+                        : Icons.notifications_none,
+                  ),
+                  tooltip: muteState.valueOrNull == true
+                      ? 'Unmute notifications'
+                      : 'Mute notifications',
+                  onPressed: muteState.isLoading
+                      ? null
+                      : () => ref
+                            .read(
+                              chatMuteControllerProvider(
+                                widget.chatId,
+                              ).notifier,
+                            )
+                            .toggle(),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          // A loading/error state shows a disabled bell rather than
-          // hiding the button entirely — "there is a mute control here,
-          // it's just not ready yet" is a more honest state than the
-          // button flickering in and out of existence.
-          IconButton(
-            icon: Icon(
-              muteState.valueOrNull == true
-                  ? Icons.notifications_off
-                  : Icons.notifications_none,
-            ),
-            tooltip: muteState.valueOrNull == true
-                ? 'Unmute notifications'
-                : 'Mute notifications',
-            onPressed: muteState.isLoading
-                ? null
-                : () => ref
-                      .read(chatMuteControllerProvider(widget.chatId).notifier)
-                      .toggle(),
-          ),
-        ],
-      ),
       body: Column(
         children: [
           const ConnectionBanner(),
@@ -538,51 +727,23 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     ),
                   );
                 }
-                return ListView.builder(
+                // Built eagerly (every message a real widget up front,
+                // rather than lazily via ListView.builder) so a search
+                // match's GlobalKey always has a BuildContext to jump to
+                // with Scrollable.ensureVisible, even for a message far
+                // outside the current viewport. Fine at this scale — one
+                // loaded page of messages (see ChatDetailController), not
+                // an unbounded history.
+                return ListView(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 8,
                   ),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final isMine = message.senderId == myId;
-                    // Only a message the server has actually confirmed,
-                    // and that isn't already deleted, can be edited or
-                    // deleted — a still-`sending`/`failed` placeholder
-                    // has no real id to act on yet, and there's nothing
-                    // left to edit/delete on a tombstone.
-                    final canModify =
-                        isMine &&
-                        !message.isDeleted &&
-                        const {
-                          MessageStatus.sent,
-                          MessageStatus.delivered,
-                          MessageStatus.read,
-                        }.contains(message.status);
-                    return _MessageBubble(
-                      message: message,
-                      isMine: isMine,
-                      onRetry: message.status == MessageStatus.failed
-                          ? () {
-                              final notifier = ref.read(
-                                chatDetailControllerProvider(
-                                  widget.chatId,
-                                ).notifier,
-                              );
-                              if (message.type == 'text') {
-                                notifier.retry(message.id, message.body ?? '');
-                              } else {
-                                notifier.retryMedia(message.id);
-                              }
-                            }
-                          : null,
-                      onLongPress: canModify
-                          ? () => _showMessageActions(message)
-                          : null,
-                    );
-                  },
+                  children: [
+                    for (final message in messages)
+                      _buildMessageTile(message, myId, searchState),
+                  ],
                 );
               },
             ),
