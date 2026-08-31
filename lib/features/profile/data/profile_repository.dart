@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../../../core/api_exception.dart';
@@ -84,15 +86,25 @@ class ProfileRepository {
     }
   }
 
-  /// [filePath] is a local file path (from image_picker). The backend is
-  /// the authoritative validator of format/size (see backend/src/utils/
-  /// imageType.js) — this just ships the bytes; a rejected file surfaces
-  /// as a normal [ApiException] (INVALID_FILE_TYPE / FILE_TOO_LARGE) for
-  /// the UI to display.
-  Future<User> uploadAvatar(String filePath) async {
+  /// [bytes] + [filename] (rather than a local file path) is what makes
+  /// this work on every platform this app runs on, Web included: the
+  /// caller (`EditProfileScreen`) gets both straight from image_picker's
+  /// `XFile.readAsBytes()`/`.name`, which — unlike `XFile.path` — are
+  /// meaningful cross-platform (`.path` is a real filesystem path on
+  /// mobile, but a `blob:` URL on web that `dio`'s file-path-based
+  /// `MultipartFile.fromFile` can't read at all). [filename]'s extension
+  /// is also what lets `dio` set the right Content-Type on the upload
+  /// part; the backend is the authoritative validator either way (see
+  /// backend/src/utils/imageType.js's magic-byte check) — a rejected file
+  /// surfaces as a normal [ApiException] (INVALID_FILE_TYPE /
+  /// FILE_TOO_LARGE) for the UI to display.
+  Future<User> uploadAvatar({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
     try {
       final formData = FormData.fromMap({
-        'avatar': await MultipartFile.fromFile(filePath),
+        'avatar': MultipartFile.fromBytes(bytes, filename: filename),
       });
       final response = await _apiClient.dio.post(
         '/users/me/avatar',

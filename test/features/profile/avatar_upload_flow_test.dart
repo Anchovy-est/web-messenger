@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -57,11 +58,16 @@ class _FakeProfileRepository extends ProfileRepository {
 
   final ApiException? errorToThrow;
   final Duration delay;
-  String? lastUploadedPath;
+  Uint8List? lastUploadedBytes;
+  String? lastUploadedFilename;
 
   @override
-  Future<User> uploadAvatar(String filePath) async {
-    lastUploadedPath = filePath;
+  Future<User> uploadAvatar({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    lastUploadedBytes = bytes;
+    lastUploadedFilename = filename;
     if (delay > Duration.zero) await Future<void>.delayed(delay);
     if (errorToThrow != null) throw errorToThrow!;
     return const User(
@@ -114,7 +120,7 @@ void main() {
     final container = ProviderScope.containerOf(element);
     await container
         .read(avatarUploadControllerProvider.notifier)
-        .upload('/fake/path/photo.png');
+        .upload(bytes: Uint8List.fromList([1, 2, 3]), filename: 'photo.png');
     // A bounded pump, not pumpAndSettle: a NetworkImage that fails to
     // load (as it always will here — there's no real server behind
     // '/uploads/avatars/u1-123.png' in a widget test) can keep
@@ -125,7 +131,8 @@ void main() {
     // decoded image, is what real widget tests can actually observe.
     await tester.pump();
 
-    expect(profileRepository.lastUploadedPath, '/fake/path/photo.png');
+    expect(profileRepository.lastUploadedBytes, [1, 2, 3]);
+    expect(profileRepository.lastUploadedFilename, 'photo.png');
     // Confirms the *data* flowed through to the widget — the real
     // network fetch behind it isn't something a widget test can
     // meaningfully assert on.
@@ -152,7 +159,7 @@ void main() {
     unawaited(
       container
           .read(avatarUploadControllerProvider.notifier)
-          .upload('/fake/path/photo.png'),
+          .upload(bytes: Uint8List.fromList([1, 2, 3]), filename: 'photo.png'),
     );
     await tester.pump(); // let the loading state land
 
@@ -181,7 +188,7 @@ void main() {
     final container = ProviderScope.containerOf(element);
     await container
         .read(avatarUploadControllerProvider.notifier)
-        .upload('/fake/path/huge.png');
+        .upload(bytes: Uint8List.fromList([1, 2, 3]), filename: 'huge.png');
     await tester.pump();
 
     expect(find.text('File exceeds the maximum allowed size.'), findsOneWidget);

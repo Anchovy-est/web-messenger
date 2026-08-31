@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/api_exception.dart';
 import '../../../models/user.dart';
+import '../../../widgets/responsive_form_scaffold.dart';
 import '../../../widgets/user_avatar.dart';
 import '../../auth/presentation/session_controller.dart';
 import 'avatar_upload_controller.dart';
@@ -74,7 +75,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     );
     if (picked == null || !mounted) return;
 
-    ref.read(avatarUploadControllerProvider.notifier).upload(picked.path);
+    // Bytes + name, not `picked.path` — on Web, `XFile.path` is a
+    // `blob:` URL, not a real filesystem path, so it's `readAsBytes()`
+    // (backed by a real file on mobile, by the in-memory Blob on web)
+    // that actually works on every platform. See
+    // `ProfileRepository.uploadAvatar`'s doc comment.
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    ref
+        .read(avatarUploadControllerProvider.notifier)
+        .upload(bytes: bytes, filename: picked.name);
   }
 
   @override
@@ -103,126 +113,120 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       }
     });
 
-    return Scaffold(
+    return ResponsiveFormScaffold(
       appBar: AppBar(title: const Text('Edit profile')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: GestureDetector(
-                    onTap: avatarState.isLoading ? null : _pickAvatar,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        UserAvatar(avatarUrl: currentAvatarUrl, radius: 48),
-                        if (avatarState.isLoading)
-                          const CircleAvatar(
-                            radius: 48,
-                            backgroundColor: Colors.black45,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                          )
-                        else
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                              child: Icon(
-                                Icons.camera_alt,
-                                size: 18,
-                                color: Theme.of(context).colorScheme.onPrimary,
-                              ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: MouseRegion(
+                cursor: avatarState.isLoading
+                    ? MouseCursor.defer
+                    : SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: avatarState.isLoading ? null : _pickAvatar,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      UserAvatar(avatarUrl: currentAvatarUrl, radius: 48),
+                      if (avatarState.isLoading)
+                        const CircleAvatar(
+                          radius: 48,
+                          backgroundColor: Colors.black45,
+                          child: CircularProgressIndicator(color: Colors.white),
+                        )
+                      else
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
+                            child: Icon(
+                              Icons.camera_alt,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.onPrimary,
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
-                if (avatarApiError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      avatarApiError.message,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _usernameController,
-                  decoration: InputDecoration(
-                    labelText: 'Username',
-                    errorText: apiError?.messageForField('username'),
-                  ),
-                  textInputAction: TextInputAction.next,
-                  validator: (value) {
-                    final v = value?.trim() ?? '';
-                    if (v.isEmpty) return 'Username is required.';
-                    if (v.length < 3) {
-                      return 'Username must be at least 3 characters.';
-                    }
-                    if (v.length > 20) {
-                      return 'Username must be at most 20 characters.';
-                    }
-                    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(v)) {
-                      return 'Only letters, numbers, and underscores.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _bioController,
-                  decoration: const InputDecoration(
-                    labelText: 'About Me',
-                    alignLabelWithHint: true,
-                  ),
-                  maxLength: 300,
-                  maxLines: 4,
-                  textInputAction: TextInputAction.done,
-                  validator: (value) {
-                    if ((value ?? '').length > 300) {
-                      return 'About Me must be at most 300 characters.';
-                    }
-                    return null;
-                  },
-                ),
-                if (apiError != null && apiError.fieldErrors.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      apiError.message,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                FilledButton(
-                  onPressed: state.isLoading ? null : _submit,
-                  child: state.isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save'),
-                ),
-              ],
+              ),
             ),
-          ),
+            if (avatarApiError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  avatarApiError.message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _usernameController,
+              decoration: InputDecoration(
+                labelText: 'Username',
+                errorText: apiError?.messageForField('username'),
+              ),
+              textInputAction: TextInputAction.next,
+              validator: (value) {
+                final v = value?.trim() ?? '';
+                if (v.isEmpty) return 'Username is required.';
+                if (v.length < 3) {
+                  return 'Username must be at least 3 characters.';
+                }
+                if (v.length > 20) {
+                  return 'Username must be at most 20 characters.';
+                }
+                if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(v)) {
+                  return 'Only letters, numbers, and underscores.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _bioController,
+              decoration: const InputDecoration(
+                labelText: 'About Me',
+                alignLabelWithHint: true,
+              ),
+              maxLength: 300,
+              maxLines: 4,
+              textInputAction: TextInputAction.done,
+              validator: (value) {
+                if ((value ?? '').length > 300) {
+                  return 'About Me must be at most 300 characters.';
+                }
+                return null;
+              },
+            ),
+            if (apiError != null && apiError.fieldErrors.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  apiError.message,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: state.isLoading ? null : _submit,
+              child: state.isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save'),
+            ),
+          ],
         ),
       ),
     );

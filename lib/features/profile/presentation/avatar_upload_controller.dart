@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/presentation/session_controller.dart';
@@ -8,12 +10,15 @@ class AvatarUploadController extends StateNotifier<AsyncValue<void>> {
 
   final Ref _ref;
 
-  Future<void> upload(String filePath) async {
+  Future<void> upload({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() async {
       final user = await _ref
           .read(profileRepositoryProvider)
-          .uploadAvatar(filePath);
+          .uploadAvatar(bytes: bytes, filename: filename);
       _ref.read(sessionControllerProvider.notifier).updateUser(user);
     });
   }

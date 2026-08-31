@@ -54,81 +54,97 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            Center(child: UserAvatar(avatarUrl: user.avatarUrl, radius: 56)),
-            const SizedBox(height: 16),
-            Center(
-              child: Text(
-                user.username,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Text('About Me', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            Text(
-              (user.bio == null || user.bio!.isEmpty)
-                  ? 'No bio yet.'
-                  : user.bio!,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: (user.bio == null || user.bio!.isEmpty)
-                    ? Theme.of(context).colorScheme.outline
-                    : null,
-                fontStyle: (user.bio == null || user.bio!.isEmpty)
-                    ? FontStyle.italic
-                    : null,
-              ),
-            ),
-            const SizedBox(height: 32),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Push notifications'),
-              subtitle: const Text(
-                'New messages and chat invitations. Mute individual chats '
-                'from that chat\'s own screen.',
-              ),
-              value: notificationsState.valueOrNull ?? true,
-              onChanged: notificationsState.isLoading
-                  ? null
-                  : (value) => ref
-                        .read(notificationSettingsControllerProvider.notifier)
-                        .setEnabled(value),
-            ),
-            const SizedBox(height: 24),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Appearance',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-            const SizedBox(height: 8),
-            SegmentedButton<AppThemeOption>(
-              segments: const [
-                ButtonSegment(
-                  value: AppThemeOption.light,
-                  label: Text('Light'),
-                  icon: Icon(Icons.light_mode_outlined),
+        // Centered and width-capped, same reasoning as the auth forms
+        // (see ResponsiveFormScaffold): below this width — every phone,
+        // this app's whole mobile experience — the constraint never
+        // binds, so this is pixel-identical to a plain full-width
+        // ListView there. On a wide desktop/web window it keeps this
+        // profile "card" from stretching edge-to-edge, which read as a
+        // stretched phone screen rather than a real desktop layout.
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                Center(
+                  child: UserAvatar(avatarUrl: user.avatarUrl, radius: 56),
                 ),
-                ButtonSegment(
-                  value: AppThemeOption.dark,
-                  label: Text('Dark'),
-                  icon: Icon(Icons.dark_mode_outlined),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    user.username,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
                 ),
-                ButtonSegment(
-                  value: AppThemeOption.floral,
-                  label: Text('Floral'),
-                  icon: Icon(Icons.local_florist_outlined),
+                const SizedBox(height: 32),
+                Text('About Me', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 8),
+                Text(
+                  (user.bio == null || user.bio!.isEmpty)
+                      ? 'No bio yet.'
+                      : user.bio!,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: (user.bio == null || user.bio!.isEmpty)
+                        ? Theme.of(context).colorScheme.outline
+                        : null,
+                    fontStyle: (user.bio == null || user.bio!.isEmpty)
+                        ? FontStyle.italic
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Push notifications'),
+                  subtitle: const Text(
+                    'New messages and chat invitations. Mute individual chats '
+                    'from that chat\'s own screen.',
+                  ),
+                  value: notificationsState.valueOrNull ?? true,
+                  onChanged: notificationsState.isLoading
+                      ? null
+                      : (value) => ref
+                            .read(
+                              notificationSettingsControllerProvider.notifier,
+                            )
+                            .setEnabled(value),
+                ),
+                const SizedBox(height: 24),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Appearance',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SegmentedButton<AppThemeOption>(
+                  segments: const [
+                    ButtonSegment(
+                      value: AppThemeOption.light,
+                      label: Text('Light'),
+                      icon: Icon(Icons.light_mode_outlined),
+                    ),
+                    ButtonSegment(
+                      value: AppThemeOption.dark,
+                      label: Text('Dark'),
+                      icon: Icon(Icons.dark_mode_outlined),
+                    ),
+                    ButtonSegment(
+                      value: AppThemeOption.floral,
+                      label: Text('Floral'),
+                      icon: Icon(Icons.local_florist_outlined),
+                    ),
+                  ],
+                  selected: {themeOption},
+                  onSelectionChanged: (selected) => ref
+                      .read(themeControllerProvider.notifier)
+                      .setOption(selected.first),
                 ),
               ],
-              selected: {themeOption},
-              onSelectionChanged: (selected) => ref
-                  .read(themeControllerProvider.notifier)
-                  .setOption(selected.first),
             ),
-          ],
+          ),
         ),
       ),
     );
