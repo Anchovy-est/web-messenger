@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 
+import 'poll.dart';
+
 /// A message's delivery lifecycle. `sending` and `failed` are
 /// purely local — a message only ever exists in one of those two states
 /// on-device, before the backend has assigned it a real id, so the server
@@ -40,6 +42,7 @@ class Message extends Equatable {
     this.editedAt,
     this.deletedAt,
     this.localBytes,
+    this.poll,
   });
 
   final String id;
@@ -52,6 +55,15 @@ class Message extends Equatable {
   final DateTime? editedAt;
   final DateTime? deletedAt;
   final MessageStatus status;
+
+  /// This message's poll content — only ever non-null when [type] is
+  /// `'poll'` (and even then, null for a *deleted* poll message, whose
+  /// underlying `polls` row is gone too; see backend/src/services/
+  /// message.service.js `attachPolls`). A poll's actual question/
+  /// options/votes live here, not in [body] — see [Poll]'s class doc
+  /// comment for why that content isn't end-to-end encrypted the way a
+  /// text message's `body` is.
+  final Poll? poll;
 
   /// The original, plaintext, not-yet-uploaded image/video/audio bytes
   /// for a still-`sending`/`failed` media message — purely a local,
@@ -87,14 +99,19 @@ class Message extends Equatable {
           ? null
           : DateTime.parse(json['deletedAt'] as String),
       status: MessageStatus.fromJson(json['status'] as String),
+      poll: json['poll'] == null
+          ? null
+          : Poll.fromJson(json['poll'] as Map<String, dynamic>),
     );
   }
 
-  /// [body] overrides the stored value when given — used by
+  /// [body]/[poll] override the stored value when given — used by
   /// `ChatDetailController` to swap a message's encrypted `body` for its
-  /// decrypted plaintext once `EncryptionService` has resolved it,
-  /// without needing to reconstruct the whole [Message].
-  Message copyWith({MessageStatus? status, String? body}) {
+  /// decrypted plaintext once `EncryptionService` has resolved it, or a
+  /// poll message's `poll` for a fresher one (a vote cast/changed/
+  /// retracted, or a live tally update), without needing to reconstruct
+  /// the whole [Message].
+  Message copyWith({MessageStatus? status, String? body, Poll? poll}) {
     return Message(
       id: id,
       chatId: chatId,
@@ -107,6 +124,7 @@ class Message extends Equatable {
       deletedAt: deletedAt,
       status: status ?? this.status,
       localBytes: localBytes,
+      poll: poll ?? this.poll,
     );
   }
 
@@ -122,5 +140,6 @@ class Message extends Equatable {
     editedAt,
     deletedAt,
     status,
+    poll,
   ];
 }

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 
 const chatService = require('./chat.service');
 const messageModel = require('../models/message.model');
+const pollModel = require('../models/poll.model');
 const { ApiError } = require('../middleware/errorHandler');
 
 const UPLOADS_ROOT = path.join(__dirname, '../../uploads');
@@ -17,12 +18,36 @@ const MEDIA_DIR = path.join(UPLOADS_ROOT, 'messages');
 async function listMessages(userId, chatId, { limit, before } = {}) {
   await chatService.getChat(userId, chatId);
   const messages = await messageModel.listForChat(chatId, { limit, before });
+  await attachPolls(messages, userId);
   // Fetching history implies the requester's device now has whatever's
   // in it — a fallback delivery signal for "was offline, opened the app
   // later" that doesn't depend on the live socket ack the client also
   // sends on `message:new` (see message.controller.js `markDelivered`).
   const delivered = await messageModel.markReceipt(chatId, userId, { read: false });
   return { messages, delivered };
+}
+
+// Mutates each poll-type message in place, adding its `poll` (question,
+// options, live vote tally, and `userId`'s own vote — see poll.model.js
+// `toPublicPoll`) — a poll's actual content lives in its own tables, not
+// in `messages.body`, so a bare message row from message.model.js is
+// incomplete on its own for this one type. A deleted poll message has no
+// content left to attach (its poll row is gone too, cascaded from the
+// message's own deletion — see the polls migration), so those are
+// skipped. Bounded by page size (at most `limit`, capped at 100 — see
+// listMessagesQuerySchema) and, in practice, by how many of those are
+// even polls, so one extra query per poll message stays cheap; folding
+// this into message.model.js's own SELECT instead would mean that file
+// — otherwise oblivious to polls entirely, same as it is to image/video/
+// audio's actual bytes — would need to know the polls schema too.
+async function attachPolls(messages, viewerUserId) {
+  await Promise.all(
+    messages
+      .filter((message) => message.type === 'poll' && !message.deletedAt)
+      .map(async (message) => {
+        message.poll = await pollModel.findByMessageId(message.id, viewerUserId);
+      })
+  );
 }
 
 // `body` is an end-to-end-encrypted envelope the client produced (see

@@ -22,6 +22,7 @@ const MESSAGE_PREVIEW_BY_TYPE = {
   image: 'Sent you a photo',
   video: 'Sent you a video',
   audio: 'Sent you a voice message',
+  poll: 'Started a poll',
 };
 
 let messaging = null;

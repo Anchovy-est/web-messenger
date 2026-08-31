@@ -202,6 +202,12 @@ class _MessageBubble extends ConsumerWidget {
         return _VideoContent(message: message);
       case 'audio':
         return _AudioContent(message: message);
+      case 'poll':
+        return _PollContent(
+          message: message,
+          isMine: isMine,
+          textColor: textColor,
+        );
       default:
         return _highlightedText(message.body ?? '', textColor);
     }

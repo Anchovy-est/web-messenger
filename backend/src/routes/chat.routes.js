@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const chatController = require('../controllers/chat.controller');
 const messageController = require('../controllers/message.controller');
+const pollController = require('../controllers/poll.controller');
 const { authenticate } = require('../middleware/authenticate');
 const { validateBody, validateQuery, validateParams } = require('../middleware/validate');
 const {
@@ -16,6 +17,11 @@ const {
   messageIdParamsSchema,
   sendMediaTypeSchema,
 } = require('../schemas/message.schema');
+const {
+  createPollSchema,
+  pollIdParamsSchema,
+  castVoteSchema,
+} = require('../schemas/poll.schema');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { mediaUpload } = require('../middleware/upload');
 
@@ -117,6 +123,32 @@ router.post(
   '/:id/read',
   validateParams(chatIdParamsSchema),
   asyncHandler(messageController.markRead)
+);
+
+router.post(
+  '/:id/polls',
+  validateParams(chatIdParamsSchema),
+  validateBody(createPollSchema),
+  asyncHandler(pollController.create)
+);
+
+router.get(
+  '/:id/polls/:pollId',
+  validateParams(pollIdParamsSchema),
+  asyncHandler(pollController.getOne)
+);
+
+router.post(
+  '/:id/polls/:pollId/vote',
+  validateParams(pollIdParamsSchema),
+  validateBody(castVoteSchema),
+  asyncHandler(pollController.vote)
+);
+
+router.delete(
+  '/:id/polls/:pollId/vote',
+  validateParams(pollIdParamsSchema),
+  asyncHandler(pollController.retractVote)
 );
 
 module.exports = router;

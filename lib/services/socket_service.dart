@@ -5,6 +5,7 @@ import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import '../config/env.dart';
 import '../models/message.dart';
 import '../models/message_status_update.dart';
+import '../models/poll_update.dart';
 import '../models/typing_update.dart';
 
 /// The app's single realtime connection. Messages are always *sent* over
@@ -31,6 +32,8 @@ class SocketService {
       StreamController<Message>.broadcast();
   final StreamController<Message> _deletedMessageController =
       StreamController<Message>.broadcast();
+  final StreamController<PollUpdate> _pollUpdatedController =
+      StreamController<PollUpdate>.broadcast();
   final StreamController<bool> _connectionStatusController =
       StreamController<bool>.broadcast();
   bool _isConnected = false;
@@ -53,6 +56,13 @@ class SocketService {
   /// Every `message:status` push (sent → delivered → read), for any
   /// chat — same filter-it-yourself contract as [messageStream].
   Stream<MessageStatusUpdate> get statusStream => _statusController.stream;
+
+  /// Every `poll:updated` push — a poll's live tally after a vote was
+  /// cast, changed, or retracted, for any chat — same filter-it-yourself
+  /// contract as [messageStream]. Never carries the recipient's own vote
+  /// (see [PollUpdate]'s doc comment); [ChatDetailController] merges it
+  /// into what it already locally knows.
+  Stream<PollUpdate> get pollUpdatedStream => _pollUpdatedController.stream;
 
   /// Every `typing` push from another participant — same
   /// filter-it-yourself contract as [messageStream]. The backend never
@@ -134,6 +144,13 @@ class SocketService {
       if (data is! Map) return;
       _deletedMessageController.add(
         Message.fromJson(Map<String, dynamic>.from(data)),
+      );
+    });
+
+    socket.on('poll:updated', (data) {
+      if (data is! Map) return;
+      _pollUpdatedController.add(
+        PollUpdate.fromJson(Map<String, dynamic>.from(data)),
       );
     });
 

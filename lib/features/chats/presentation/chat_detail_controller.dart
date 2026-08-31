@@ -9,6 +9,8 @@ import '../../../core/api_exception.dart';
 import '../../../core/decryption_placeholder.dart';
 import '../../../models/message.dart';
 import '../../../models/message_status_update.dart';
+import '../../../models/poll.dart';
+import '../../../models/poll_update.dart';
 import '../../../providers/core_providers.dart';
 import '../../../services/encryption_service.dart';
 import '../../../services/secure_storage_service.dart';
@@ -17,6 +19,7 @@ import '../../auth/presentation/session_controller.dart';
 import '../data/chat_providers.dart';
 import '../data/chat_repository.dart';
 import '../data/message_repository.dart';
+import '../data/poll_repository.dart';
 
 /// How long the composer can sit idle before we tell the other side we've
 /// stopped typing, if [ChatDetailController.onComposerChanged] doesn't
@@ -72,6 +75,7 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
     this._chatId,
     this._repository,
     this._chatRepository,
+    this._pollRepository,
     this._encryptionService,
   ) : _socketService = _ref.read(socketServiceProvider),
       _secureStorage = _ref.read(secureStorageServiceProvider),
@@ -82,6 +86,9 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
     _deletedSubscription = _socketService.deletedMessageStream.listen(
       _onDeleted,
     );
+    _pollUpdatedSubscription = _socketService.pollUpdatedStream.listen(
+      _onPollUpdated,
+    );
     _init();
   }
 
@@ -89,6 +96,7 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   final String _chatId;
   final MessageRepository _repository;
   final ChatRepository _chatRepository;
+  final PollRepository _pollRepository;
   final EncryptionService _encryptionService;
   final SocketService _socketService;
   final SecureStorageService _secureStorage;
@@ -96,6 +104,7 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
   late final StreamSubscription<MessageStatusUpdate> _statusSubscription;
   late final StreamSubscription<Message> _editedSubscription;
   late final StreamSubscription<Message> _deletedSubscription;
+  late final StreamSubscription<PollUpdate> _pollUpdatedSubscription;
   int _tempIdCounter = 0;
   Timer? _typingStopTimer;
   bool _iAmTyping = false;
@@ -518,6 +527,83 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
     _replaceMessage(message);
   }
 
+  /// Creates a poll in this (group) chat — comes back as a brand-new
+  /// message, exactly like [send]/[sendImage] do, except not
+  /// optimistic: a poll has no plaintext to show immediately the way a
+  /// text message does, so this simply appends the server-confirmed
+  /// message once it exists (deduping against the same message's own
+  /// `message:new` echo — see [_appendIfAbsent] — the same race
+  /// [_resolveLocal] guards against for other sends).
+  ///
+  /// Throws [ApiException] on failure (e.g. this chat isn't a group);
+  /// the caller (the create-poll dialog) is expected to catch that and
+  /// show it rather than have this fail silently.
+  Future<void> createPoll({
+    required String question,
+    required List<String> options,
+    required bool isAnonymous,
+  }) async {
+    final message = await _pollRepository.createPoll(
+      _chatId,
+      question: question,
+      options: options,
+      isAnonymous: isAnonymous,
+    );
+    if (!mounted) return;
+    _appendIfAbsent(message);
+  }
+
+  /// Casts (or, if [optionId] differs from whatever was already voted,
+  /// changes) this device's own vote — not optimistic, so the tally
+  /// shown always reflects what the server actually recorded, including
+  /// [Poll.myVoteOptionId] for this same request's caller (a realtime
+  /// `poll:updated` push never carries that — see [_onPollUpdated]).
+  Future<void> castVote(
+    String messageId,
+    String pollId,
+    String optionId,
+  ) async {
+    final poll = await _pollRepository.vote(_chatId, pollId, optionId);
+    if (!mounted) return;
+    _replacePoll(messageId, poll);
+  }
+
+  /// Retracts this device's own vote — same non-optimistic shape as
+  /// [castVote].
+  Future<void> retractVote(String messageId, String pollId) async {
+    final poll = await _pollRepository.retractVote(_chatId, pollId);
+    if (!mounted) return;
+    _replacePoll(messageId, poll);
+  }
+
+  void _replacePoll(String messageId, Poll poll) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncValue.data([
+      for (final m in current)
+        if (m.id == messageId) m.copyWith(poll: poll) else m,
+    ]);
+  }
+
+  // A `poll:updated` push is a live tally, shared identically with every
+  // participant — never this device's own vote (see [PollUpdate]'s doc
+  // comment) — so it's merged onto whatever this device already knows
+  // about its own vote via [Poll.withBroadcastTally], never replacing
+  // the poll outright the way [_replacePoll] does for this device's own
+  // vote/retract actions.
+  void _onPollUpdated(PollUpdate update) {
+    if (update.chatId != _chatId) return;
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncValue.data([
+      for (final m in current)
+        if (m.poll != null && m.poll!.id == update.poll.id)
+          m.copyWith(poll: m.poll!.withBroadcastTally(update.poll))
+        else
+          m,
+    ]);
+  }
+
   void _replaceMessage(Message message) {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -581,6 +667,17 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
     state = AsyncValue.data([...current, message]);
   }
 
+  // Appends a server-confirmed message that was never optimistically
+  // shown (there's no local placeholder/tempId to swap out — see
+  // [createPoll]) — skipped if it's already present, since the socket's
+  // own `message:new` echo of this same message can easily race ahead of
+  // this call and land first.
+  void _appendIfAbsent(Message message) {
+    final current = state.valueOrNull ?? const [];
+    if (current.any((m) => m.id == message.id)) return;
+    state = AsyncValue.data([...current, message]);
+  }
+
   void _setLocalStatus(String id, MessageStatus status) {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -612,6 +709,7 @@ class ChatDetailController extends StateNotifier<AsyncValue<List<Message>>> {
     _statusSubscription.cancel();
     _editedSubscription.cancel();
     _deletedSubscription.cancel();
+    _pollUpdatedSubscription.cancel();
     super.dispose();
   }
 }
@@ -626,6 +724,7 @@ final chatDetailControllerProvider = StateNotifierProvider.autoDispose
         chatId,
         ref.watch(messageRepositoryProvider),
         ref.watch(chatRepositoryProvider),
+        ref.watch(pollRepositoryProvider),
         ref.watch(encryptionServiceProvider),
       );
     });

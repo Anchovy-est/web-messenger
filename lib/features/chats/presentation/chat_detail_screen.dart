@@ -13,6 +13,7 @@ import '../../../core/api_exception.dart';
 import '../../../core/media/local_media_bytes.dart';
 import '../../../core/media/video_bytes_source.dart';
 import '../../../models/message.dart';
+import '../../../models/poll.dart';
 import '../../../providers/core_providers.dart';
 import '../../../services/audio_recorder_service.dart';
 import '../../../services/media_compression_service.dart';
@@ -38,10 +39,12 @@ part 'chat_message_bubble.dart';
 part 'chat_media_content.dart';
 part 'chat_composer.dart';
 part 'chat_edit_message_dialog.dart';
+part 'chat_create_poll_dialog.dart';
+part 'chat_poll_bubble.dart';
 
 enum _MessageAction { edit, delete }
 
-enum _Attachment { galleryPhoto, cameraPhoto, galleryVideo, cameraVideo }
+enum _Attachment { galleryPhoto, cameraPhoto, galleryVideo, cameraVideo, poll }
 
 /// Recordings shorter than this are discarded rather than sent — a tap
 /// that immediately becomes a stop (an accidental double-tap on the mic
@@ -169,6 +172,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     );
   }
 
+  void _createPoll() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _CreatePollDialog(chatId: widget.chatId),
+    );
+  }
+
   /// Picks and sends an image or video attachment. Picking, compressing,
   /// and uploading all happen here in the screen rather than
   /// the controller — [ChatDetailController.sendImage]/[sendVideo] only
@@ -179,6 +189,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   /// SnackBar rather than a failed-message bubble, since none of those are
   /// things a retry-in-place would fix.
   Future<void> _pickAttachment() async {
+    final isGroup = ref
+        .read(chatDetailControllerProvider(widget.chatId).notifier)
+        .isGroup;
     final choice = await showModalBottomSheet<_Attachment>(
       context: context,
       builder: (context) => SafeArea(
@@ -205,14 +218,32 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               title: const Text('Record a video'),
               onTap: () => Navigator.pop(context, _Attachment.cameraVideo),
             ),
+            // Polls only make sense with more than one other person to
+            // vote — same group-only restriction the backend itself
+            // enforces (see backend/src/services/poll.service.js
+            // `createPoll`), mirrored here so the option isn't even
+            // offered somewhere it would just come back rejected.
+            if (isGroup)
+              ListTile(
+                leading: const Icon(Icons.poll_outlined),
+                title: const Text('Poll'),
+                onTap: () => Navigator.pop(context, _Attachment.poll),
+              ),
           ],
         ),
       ),
     );
     if (choice == null) return;
 
+    if (choice == _Attachment.poll) {
+      _createPoll();
+      return;
+    }
+
     try {
       switch (choice) {
+        case _Attachment.poll:
+          return; // handled above — unreachable, but keeps this exhaustive
         case _Attachment.galleryPhoto:
         case _Attachment.cameraPhoto:
           final picked = await ImagePicker().pickImage(
