@@ -35,6 +35,13 @@ services:
       # a real deployment" posture as the two JWT secrets above.
       PROFILE_ENCRYPTION_KEY: ${PROFILE_ENCRYPTION_KEY:-dev_profile_encryption_key_change_me}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      # Left empty by default — NODE_ENV here is development, so an
+      # empty value just means "reflect any origin" (see
+      # backend/src/config/env.js), which is what running the Flutter
+      # client locally against this stack needs. Only ever needs setting
+      # here if you're pointing a real deployed frontend at a locally
+      # run backend.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}

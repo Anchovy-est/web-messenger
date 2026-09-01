@@ -17,6 +17,7 @@ API and PostgreSQL.
 - [APK Installation](#apk-installation)
 - [Emulator Setup](#emulator-setup)
 - [Browser-Based Emulator](#browser-based-emulator)
+- [Deployment](#deployment)
 - [Usage Guide](#usage-guide)
 - [Reviewer Guide](#reviewer-guide)
 - [Testing](#testing)
@@ -322,6 +323,90 @@ USB-connected physical device (see [Android Setup](#android-setup)) is
 the simpler path - this one exists for a machine that genuinely can't run
 Android tooling locally.
 
+## Deployment
+
+The web client (Flutter web) and the backend (Node/Express + Postgres)
+deploy to two separate free-tier services: **Vercel** for the static web
+build, **Render** for the API + database. Both read from this same repo,
+so a `git push` to your deployed branch is all a redeploy needs once
+they're connected.
+
+### 1. Backend (Render)
+
+1. Push this repo to your own GitHub (or GitLab/Bitbucket) remote -
+   Render deploys from a repo it can see, not from your local disk.
+2. In the [Render dashboard](https://dashboard.render.com), **New +
+   -> Blueprint**, and point it at your repo. Render reads
+   [`render.yaml`](render.yaml) at the repo root and provisions a Docker
+   web service (`backend/Dockerfile`) plus a managed Postgres database
+   automatically - migrations run on every deploy via
+   `docker-entrypoint.sh`, same as `docker compose up` locally.
+3. `render.yaml` leaves several env vars for you to fill in by hand in
+   the service's **Environment** tab (marked `sync: false` so they're
+   never committed):
+   - `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `PROFILE_ENCRYPTION_KEY`
+     - generate each with
+       `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
+     The backend **refuses to start** in production if any of these are
+     missing or still a known placeholder value (see
+     `backend/src/config/env.js`).
+   - `CORS_ORIGINS` - leave it unset for now; come back and set it once
+     you have the Vercel URL from step 2 below (the backend also refuses
+     to start in production without this set at all).
+   - `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` -
+     optional. Leave unset and verification/reset codes are logged to
+     the service's own Render logs instead of emailed, same as local
+     dev's `docker logs` fallback (see [Backend Setup](#backend-setup)).
+4. Once deployed, confirm it's up: `https://<your-service>.onrender.com/health`
+   should return `{"status":"ok"}`. Keep this URL - it's `API_BASE_URL`
+   for the web client below.
+
+   **Uploads note:** avatar images and message media are written to a
+   local disk at `/app/uploads`. `render.yaml` requests a persistent
+   disk for this, but Render's **free** instance plan doesn't support
+   persistent disks - on the free plan, uploads are lost on every
+   redeploy/restart. Upgrade the service's plan to get real persistence
+   with no other changes, or swap in object storage (S3-compatible) if
+   you'd rather stay on the free plan.
+
+### 2. Web client (Vercel)
+
+1. In the [Vercel dashboard](https://vercel.com), **Add New -> Project**,
+   import the same repo. Vercel reads [`vercel.json`](vercel.json) at the
+   repo root, which runs [`scripts/vercel-build.sh`](scripts/vercel-build.sh)
+   - this installs the Flutter SDK during the build (Vercel's build
+   image doesn't ship one) and runs `flutter build web --release`, so
+   there's nothing to configure in the Vercel UI's framework/build
+   settings themselves.
+2. Before the first deploy, add two **Environment Variables** in the
+   Vercel project settings:
+   - `API_BASE_URL` - the Render backend URL from step 1
+     (`https://<your-service>.onrender.com`).
+   - `SOCKET_URL` - optional; defaults to `API_BASE_URL` if unset (the
+     backend serves both REST and Socket.IO from the same origin).
+
+   These are read by `scripts/vercel-build.sh` and baked into the build
+   via `--dart-define`, the exact mechanism `lib/config/env.dart`
+   already reads at runtime - no client code changes needed.
+3. Deploy. Vercel gives you a URL like
+   `https://your-app.vercel.app` - that's the whole web app, live.
+
+### 3. Close the loop: lock down CORS
+
+Back in Render, set the `CORS_ORIGINS` env var (left blank in step 1) to
+your Vercel URL from step 2, then redeploy the backend (Render redeploys
+automatically on an env var change, or trigger one manually). This is
+what actually restricts the API to your deployed frontend instead of
+reflecting any origin - see `backend/src/app.js` and
+`backend/src/sockets/index.js`. Verify it worked: opening the Vercel app
+and using it (register, log in, send a message) should all work
+normally; a request to the API from a *different* origin (e.g. the
+browser console on some unrelated page) should be blocked by CORS.
+
+Multiple origins (e.g. a Vercel preview-deployment URL alongside the
+production one) are supported - comma-separate them:
+`CORS_ORIGINS=https://your-app.vercel.app,https://your-app-git-main.vercel.app`.
+
 ## Usage Guide
 
 1. **Register** with an email, username, and password.
@@ -449,6 +534,13 @@ than mocking the database.
   secrets still match a known placeholder value
   (`backend/src/config/env.js`). No real secret is committed to this
   repository.
+- **CORS**: wide open (reflects any origin) in local dev and in the test
+  suite, since neither has a meaningful origin to restrict to. A
+  production deployment must set `CORS_ORIGINS` to the deployed web
+  client's exact origin(s) - the backend refuses to start in
+  `NODE_ENV=production` without it set at all (`backend/src/config/env.js`,
+  `backend/src/app.js`, `backend/src/sockets/index.js`). See
+  [Deployment](#deployment).
 - **Password strength**: enforced identically in two places-
   `backend/src/schemas/auth.schema.js` (the actual gate: registration and
   password reset are rejected server-side regardless of what the client

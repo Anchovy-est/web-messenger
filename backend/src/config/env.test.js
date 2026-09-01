@@ -11,6 +11,7 @@ const TOUCHED_KEYS = [
   'JWT_ACCESS_SECRET',
   'JWT_REFRESH_SECRET',
   'PROFILE_ENCRYPTION_KEY',
+  'CORS_ORIGINS',
 ];
 
 function withEnv(overrides, fn) {
@@ -67,7 +68,7 @@ test('refuses to start in production with a known placeholder encryption key', (
   );
 });
 
-test('starts normally in production with real, unique secrets', () => {
+test('starts normally in production with real, unique secrets and CORS_ORIGINS set', () => {
   const result = withEnv(
     {
       NODE_ENV: 'production',
@@ -75,6 +76,7 @@ test('starts normally in production with real, unique secrets', () => {
       JWT_ACCESS_SECRET: 'a-real-unique-access-secret',
       JWT_REFRESH_SECRET: 'a-real-unique-refresh-secret',
       PROFILE_ENCRYPTION_KEY: 'a-real-unique-encryption-key',
+      CORS_ORIGINS: 'https://example.com',
     },
     () => require(ENV_PATH)
   );
@@ -90,9 +92,52 @@ test('placeholder secrets are only rejected in production, not development', () 
       JWT_ACCESS_SECRET: 'dev_access_secret_change_me',
       JWT_REFRESH_SECRET: 'dev_refresh_secret_change_me',
       PROFILE_ENCRYPTION_KEY: 'dev_profile_encryption_key_change_me',
+      CORS_ORIGINS: '',
     },
     () => require(ENV_PATH)
   );
 
   assert.equal(result.isProduction, false);
+});
+
+// --- CORS_ORIGINS ----------------------------------------------------
+
+test('parses CORS_ORIGINS into a trimmed, comma-separated list', () => {
+  const result = withEnv(
+    {
+      NODE_ENV: 'test', // so the JWT/encryption-key fallbacks apply — irrelevant to this test
+      DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      CORS_ORIGINS: ' https://a.example.com ,https://b.example.com',
+    },
+    () => require(ENV_PATH)
+  );
+
+  assert.deepEqual(result.corsOrigins, ['https://a.example.com', 'https://b.example.com']);
+});
+
+test('an unset CORS_ORIGINS parses to an empty list outside production', () => {
+  const result = withEnv(
+    { NODE_ENV: 'test', DATABASE_URL: 'postgres://user:pass@localhost:5432/db', CORS_ORIGINS: '' },
+    () => require(ENV_PATH)
+  );
+
+  assert.deepEqual(result.corsOrigins, []);
+});
+
+test('refuses to start in production without CORS_ORIGINS set', () => {
+  assert.throws(
+    () =>
+      withEnv(
+        {
+          NODE_ENV: 'production',
+          DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+          JWT_ACCESS_SECRET: 'a-real-unique-access-secret',
+          JWT_REFRESH_SECRET: 'a-real-unique-refresh-secret',
+          PROFILE_ENCRYPTION_KEY: 'a-real-unique-encryption-key',
+          CORS_ORIGINS: '',
+        },
+        () => require(ENV_PATH)
+      ),
+    /CORS_ORIGINS/
+  );
 });

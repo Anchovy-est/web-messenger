@@ -9,6 +9,7 @@
 const { Server } = require('socket.io');
 const { verifyAccessToken } = require('../utils/jwt');
 const chatModel = require('../models/chat.model');
+const env = require('../config/env');
 
 function chatRoom(chatId) {
   return `chat:${chatId}`;
@@ -16,7 +17,10 @@ function chatRoom(chatId) {
 
 function attachSocketServer(httpServer) {
   const io = new Server(httpServer, {
-    cors: { origin: '*' },
+    // Same allow-list as the REST API's CORS config (app.js) — open in
+    // local dev/tests (env.corsOrigins empty), locked to the deployed
+    // client's origin(s) once set.
+    cors: { origin: env.corsOrigins.length > 0 ? env.corsOrigins : '*' },
   });
 
   // Auth and room-joining both happen here in `io.use`, not in the
