@@ -5,13 +5,17 @@
 # backend URL for the Vercel side).
 #
 # Uploads (avatar images, message media) are written to a local disk at
-# /app/uploads — the `disk` block below persists that across restarts
-# and redeploys, but Render's free instance plan does NOT support
-# persistent disks. On the free plan, uploads are lost on every
-# redeploy/restart; upgrade the `backend` service's plan (and keep the
-# disk block) for real persistence, or swap in object storage (S3-
-# compatible) instead — not done here to keep this a single Blueprint
-# with no extra account/service to provision.
+# /app/uploads. Render's free instance plan doesn't just fail to persist
+# a disk across redeploys — it refuses to deploy a Blueprint that
+# declares one at all, so there's no `disk` block here. Practically:
+# uploaded avatars/media are lost on every redeploy/restart on the free
+# plan. To get real persistence, upgrade the `backend` service below to
+# a paid plan and add:
+#   disk:
+#     name: uploads
+#     mountPath: /app/uploads
+#     sizeGB: 1
+# or swap in object storage (S3-compatible) instead.
 databases:
   - name: web-messenger-db
     databaseName: messenger
@@ -26,10 +30,6 @@ services:
     dockerContext: ./backend
     plan: free
     healthCheckPath: /health
-    disk:
-      name: uploads
-      mountPath: /app/uploads
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
