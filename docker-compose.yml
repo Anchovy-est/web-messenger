@@ -47,11 +47,6 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-Mobile Messenger <no-reply@mobile-messenger.local>}
-      # Points at the bind-mounted secrets/ directory below. Push
-      # notifications stay disabled (no error) until a real
-      # firebase-service-account.json is dropped in there — see
-      # backend/secrets/README.md and docs/PUSH_NOTIFICATIONS.md.
-      FIREBASE_SERVICE_ACCOUNT_PATH: /app/secrets/firebase-service-account.json
     ports:
       # Host port 3001 -> container port 3000. Host 3000 was found occupied
       # by an unrelated local process (wslrelay.exe) during development on
@@ -59,7 +54,6 @@ services:
       - "3001:3000"
     volumes:
       - backend_uploads:/app/uploads
-      - ./backend/secrets:/app/secrets:ro
 
 volumes:
   db_data:

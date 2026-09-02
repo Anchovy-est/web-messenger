@@ -60,12 +60,6 @@ const env = {
     .map((origin) => origin.trim())
     .filter(Boolean),
 
-  // Path to a Firebase service-account JSON key for push notifications.
-  // No test/dev fallback — there's no meaningful fake credential for a
-  // real external service, so push just stays disabled until this is
-  // set.
-  firebaseServiceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
-
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 26214400),
 
   isProduction: process.env.NODE_ENV === 'production',

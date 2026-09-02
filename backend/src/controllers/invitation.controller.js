@@ -1,15 +1,7 @@
 const invitationService = require('../services/invitation.service');
-const pushService = require('../services/push.service');
 
 async function send(req, res) {
   const invitation = await invitationService.sendInvitation(req.userId, req.body.inviteeId);
-
-  // Fire-and-forget — same reasoning as message.controller.js's
-  // notifyPush: a push failure must never turn a successfully created
-  // invitation into a 500 response.
-  pushService
-    .notifyNewInvitation({ inviteeId: req.body.inviteeId, inviterId: req.userId })
-    .catch((err) => console.error('Push notification failed:', err));
 
   res.status(201).json({ invitation });
 }

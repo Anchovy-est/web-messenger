@@ -7,8 +7,6 @@ const {
   updateProfileSchema,
   searchQuerySchema,
   updatePublicKeySchema,
-  registerPushTokenSchema,
-  unregisterPushTokenSchema,
 } = require('../schemas/user.schema');
 const { asyncHandler } = require('../middleware/errorHandler');
 
@@ -47,23 +45,6 @@ router.put(
   authenticate,
   validateBody(updatePublicKeySchema),
   asyncHandler(userController.updatePublicKey)
-);
-
-// Registers this device's push token. PUT for the same "full replace"
-// reasoning as the public-key route, but per-device: the token itself,
-// not req.userId, is what pushToken.model.js upserts on.
-router.put(
-  '/me/push-token',
-  authenticate,
-  validateBody(registerPushTokenSchema),
-  asyncHandler(userController.registerPushToken)
-);
-
-router.delete(
-  '/me/push-token',
-  authenticate,
-  validateBody(unregisterPushTokenSchema),
-  asyncHandler(userController.unregisterPushToken)
 );
 
 module.exports = router;

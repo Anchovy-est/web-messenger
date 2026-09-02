@@ -1,6 +1,5 @@
 const chatService = require('../services/chat.service');
 const invitationService = require('../services/invitation.service');
-const pushService = require('../services/push.service');
 
 async function list(req, res) {
   const archived = req.query.archived === 'true';
@@ -9,18 +8,10 @@ async function list(req, res) {
 }
 
 async function createGroup(req, res) {
-  const { chat, invitedUserIds } = await chatService.createGroupChat(req.userId, {
+  const { chat } = await chatService.createGroupChat(req.userId, {
     name: req.body.name,
     participantIds: req.body.participantIds,
   });
-
-  // Fire-and-forget, one per invitee — a push failure must never turn
-  // a successful group creation into a 500 response.
-  for (const inviteeId of invitedUserIds) {
-    pushService
-      .notifyNewInvitation({ inviteeId, inviterId: req.userId, groupName: chat.name })
-      .catch((err) => console.error('Push notification failed:', err));
-  }
 
   res.status(201).json({ chat });
 }
@@ -31,14 +22,6 @@ async function inviteToChat(req, res) {
     req.params.id,
     req.body.inviteeId
   );
-
-  pushService
-    .notifyNewInvitation({
-      inviteeId: req.body.inviteeId,
-      inviterId: req.userId,
-      groupName: invitation.chat.name,
-    })
-    .catch((err) => console.error('Push notification failed:', err));
 
   res.status(201).json({ invitation });
 }

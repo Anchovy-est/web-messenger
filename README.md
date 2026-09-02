@@ -65,9 +65,6 @@ platform this project is built and verified for; see
 - End-to-end encryption for message bodies and media (see
   [Security](#security))
 - JWT access/refresh session model, rate-limited login and OTP endpoints
-- Push notifications (Firebase Cloud Messaging), off by default until a
-  Firebase project is configured - see
-  [Additional Features](#additional-features)
 
 **UI**
 - Light, Dark, and a decorative "Floral" theme (soft botanical
@@ -84,7 +81,6 @@ platform this project is built and verified for; see
 | Client crypto | `cryptography` package-  X25519 key exchange, AES-256-GCM |
 | Client media | image_picker, flutter_image_compress, video_compress, video_player, record, audioplayers |
 | Client storage | flutter_secure_storage (tokens, identity key), path_provider |
-| Client push | firebase_messaging, flutter_local_notifications |
 | Backend | Node.js ≥20, Express, PostgreSQL 16 |
 | Backend realtime | Socket.IO |
 | Backend auth | JWT (access + refresh), bcrypt, express-rate-limit |
@@ -576,13 +572,6 @@ than mocking the database.
 
 ## Additional Features
 
-- **Push notifications**: integrated via Firebase Cloud Messaging, but
-  inert until you provide your own Firebase project - drop a
-  `firebase-service-account.json` into `backend/secrets/` (bind-mounted
-  read-only into the container per `docker-compose.yml`) and configure
-  the client's own Firebase config. Without it, the app works completely
-  normally- every push-related call degrades to a silent no-op instead
-  of throwing.
 - **Floral theme**: a third, purely decorative theme option (alongside
   Light/Dark) built from a curated pastel palette and a single recolored
   SVG flower asset scattered subtly behind the UI-  see
@@ -600,8 +589,6 @@ than mocking the database.
   debug key (see [APK Installation](#apk-installation)); a real release
   to a store would need its own signing key, which is out of scope for a
   local/reviewer build.
-- **Push notifications need your own Firebase project**, not configured
-  by default (see [Additional Features](#additional-features)).
 - **OTP brute-force mitigation is per-IP, not per-account**: the rate
   limiter added during the security review (see [Security](#security))
   meaningfully raises the bar but doesn't fully stop a distributed

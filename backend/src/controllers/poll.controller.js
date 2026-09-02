@@ -1,15 +1,5 @@
 const pollService = require('../services/poll.service');
-const pushService = require('../services/push.service');
 const { chatRoom } = require('../sockets');
-
-// Fire-and-forget, same posture as message.controller.js `notifyPush` —
-// a push failure must never turn an otherwise-successful request into a
-// 500.
-function notifyPush(message) {
-  pushService
-    .notifyNewMessage({ chatId: message.chatId, senderId: message.senderId, type: message.type })
-    .catch((err) => console.error('Push notification failed:', err));
-}
 
 // A realtime broadcast goes to everyone in the room identically, so
 // `myVoteOptionId` (this viewer's own choice) is stripped before it
@@ -36,7 +26,6 @@ async function create(req, res) {
   if (io) {
     io.to(chatRoom(req.params.id)).emit('message:new', message);
   }
-  notifyPush(message);
 
   res.status(201).json({ message, poll });
 }

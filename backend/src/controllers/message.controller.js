@@ -1,15 +1,6 @@
 const messageService = require('../services/message.service');
-const pushService = require('../services/push.service');
 const { chatRoom } = require('../sockets');
 const { ApiError } = require('../middleware/errorHandler');
-
-// Fire-and-forget: a push failure must never turn an otherwise
-// successful send into a 500 response.
-function notifyPush(message) {
-  pushService
-    .notifyNewMessage({ chatId: message.chatId, senderId: message.senderId, type: message.type })
-    .catch((err) => console.error('Push notification failed:', err));
-}
 
 // `io` is only set on `app` by server.js — absent in tests exercising
 // createApp() directly. Broadcasting is a nice-to-have, not a
@@ -41,7 +32,6 @@ async function send(req, res) {
   if (io) {
     io.to(chatRoom(req.params.id)).emit('message:new', message);
   }
-  notifyPush(message);
 
   res.status(201).json({ message });
 }
@@ -62,7 +52,6 @@ async function sendMedia(req, res) {
   if (io) {
     io.to(chatRoom(req.params.id)).emit('message:new', message);
   }
-  notifyPush(message);
 
   res.status(201).json({ message });
 }

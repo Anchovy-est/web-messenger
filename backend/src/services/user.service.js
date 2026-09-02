@@ -2,7 +2,6 @@ const fs = require('fs/promises');
 const path = require('path');
 
 const userModel = require('../models/user.model');
-const pushTokenModel = require('../models/pushToken.model');
 const { ApiError } = require('../middleware/errorHandler');
 const { detectImageType, EXTENSION_BY_TYPE } = require('../utils/imageType');
 
@@ -87,26 +86,10 @@ async function updatePublicKey(userId, publicKey) {
   return userModel.toPublicUser(updated);
 }
 
-// Registers (or re-registers) this device's push token — called at
-// login/session-restore and whenever Firebase rotates the token. No
-// existence check needed: `req.userId` came from a verified JWT.
-async function registerPushToken(userId, token, platform) {
-  await pushTokenModel.register(userId, token, platform);
-}
-
-// Called on logout so a signed-out device stops receiving this
-// user's pushes immediately, instead of waiting for the token to
-// expire or be replaced.
-async function unregisterPushToken(userId, token) {
-  await pushTokenModel.unregister(userId, token);
-}
-
 module.exports = {
   getProfile,
   updateProfile,
   updateAvatar,
   searchUsers,
   updatePublicKey,
-  registerPushToken,
-  unregisterPushToken,
 };

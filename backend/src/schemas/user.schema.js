@@ -39,23 +39,8 @@ const searchQuerySchema = z.object({
     .max(100, 'Search query is too long.'),
 });
 
-// FCM device tokens are opaque strings with no fixed shape beyond
-// "non-empty, not absurdly long" — actually verifying one is valid
-// means calling Firebase, which push.service.js already does at send
-// time, not registration time.
-const registerPushTokenSchema = z.object({
-  token: z.string().trim().min(1, 'Token is required.').max(4096, 'Token is too long.'),
-  platform: z.enum(['android', 'ios']).optional().default('android'),
-});
-
-const unregisterPushTokenSchema = z.object({
-  token: z.string().trim().min(1, 'Token is required.'),
-});
-
 module.exports = {
   updateProfileSchema,
   searchQuerySchema,
   updatePublicKeySchema,
-  registerPushTokenSchema,
-  unregisterPushTokenSchema,
 };

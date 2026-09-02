@@ -29,22 +29,10 @@ async function updatePublicKey(req, res) {
   res.status(200).json({ user });
 }
 
-async function registerPushToken(req, res) {
-  await userService.registerPushToken(req.userId, req.body.token, req.body.platform);
-  res.status(204).send();
-}
-
-async function unregisterPushToken(req, res) {
-  await userService.unregisterPushToken(req.userId, req.body.token);
-  res.status(204).send();
-}
-
 module.exports = {
   getMe,
   updateMe,
   uploadAvatar,
   search,
   updatePublicKey,
-  registerPushToken,
-  unregisterPushToken,
 };
