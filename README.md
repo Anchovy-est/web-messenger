@@ -4,6 +4,13 @@ A secure, real-time mobile messenger with end-to-end encrypted text, image,
 video, and voice messages, a Flutter client backed by a Node.js/Express
 API and PostgreSQL.
 
+This file covers the project at a high level — what it is, how it's put
+together, and how to get it running. For the backend specifically —
+environment variables, the database, every API endpoint, authentication,
+deployment, debugging, and how to safely add or change an endpoint — see
+the **[Backend Developer Guide](backend/README.md)**, which goes much
+deeper and is kept as the operational source of truth for `backend/`.
+
 ## Table of Contents
 
 - [Project Overview](#project-overview)
@@ -27,11 +34,13 @@ API and PostgreSQL.
 
 ## Project Overview
 
-Mobile Messenger is a two-party chat app in the shape of a typical modern
-messenger: register, verify your email, find people by username, send an
-invitation, and once it's accepted, chat- text, photos, videos, and voice
-notes, all end-to-end encrypted, delivered in real time, with typing
-indicators and read receipts.
+Mobile Messenger is an invitation-based chat app in the shape of a
+typical modern messenger: register, verify your email, find people by
+username, send an invitation, and once it's accepted, chat- text,
+photos, videos, and voice notes, all end-to-end encrypted, delivered in
+real time, with typing indicators and read receipts. Chats can be
+one-to-one or group (up to 50 people, everyone still invited and
+accepting individually - see [Features](#features)).
 
 The backend (`backend/`) is a REST + Socket.IO API on Express and
 PostgreSQL, packaged to start with a single `docker compose up`. The client
@@ -44,8 +53,12 @@ platform this project is built and verified for; see
 **Messaging**
 - Real-time text messaging over Socket.IO, with an optimistic send →
   sent → delivered → read status lifecycle
+- Group chats (up to 50 people) alongside one-to-one chats - everyone
+  added is invited and has to accept, same as starting a 1:1 chat
 - Image and video messages (client-side compressed before upload)
 - Voice messages (record, upload, in-app playback)
+- Polls: multiple-choice, optionally anonymous, live vote tallies over
+  the realtime connection
 - Message editing and deletion (soft-deleted as a visible tombstone, not
   silently vanished)
 - Typing indicators
@@ -84,8 +97,9 @@ platform this project is built and verified for; see
 | Backend | Node.js ≥20, Express, PostgreSQL 16 |
 | Backend realtime | Socket.IO |
 | Backend auth | JWT (access + refresh), bcrypt, express-rate-limit |
-| Backend media | multer (upload), sharp/ffmpeg-adjacent server-side validation (type/size re-enforced server-side, never trusted from the client) |
+| Backend media | multer (upload), magic-byte image-type detection for avatars, size caps enforced server-side regardless of what the client claims |
 | Infra | Docker Compose (Postgres + API in one command), node-pg-migrate (versioned SQL migrations) |
+| Deployment | Vercel (web client), Render (API + Postgres) — see [Deployment](#deployment) |
 
 ## Architecture
 
@@ -105,7 +119,7 @@ lib/
   repositories/  Cross-feature data access
   routing/       go_router route table + auth-gated redirects
   services/      ApiClient (Dio + refresh), SocketService, EncryptionService,
-                 SecureStorageService, PushNotificationService, ...
+                 SecureStorageService, ...
   widgets/       Shared UI: LoadingView, EmptyStateView, ErrorStateView,
                  UserAvatar, ConnectionBanner, FloralBackground
 
@@ -113,13 +127,17 @@ backend/src/
   config/        Env loading + startup validation (see Security)
   controllers/    Route handlers
   routes/        Express route tables (+ rate limiters wired in per-route)
-  services/      Business logic (auth, chat, message, email, push, ...)
+  services/      Business logic (auth, chat, message, email, ...)
   models/        SQL query layer
   schemas/       Request validation (Zod-style schemas)
   middleware/    Auth guard, upload limits, rate limiting, error handler
   sockets/       Socket.IO auth + event handlers (typing, presence)
   migrations/    node-pg-migrate versioned schema changes, run on startup
 ```
+
+See the **[Backend Developer Guide](backend/README.md#whats-in-backend)**
+for what each backend file actually does and how the layers fit
+together (route → controller → service → model).
 
 **End-to-end encryption, in short**: each device generates an X25519
 identity keypair on first login and registers only the *public* half with
@@ -150,8 +168,8 @@ You need:
   for a no-local-install option.
 
 ```bash
-git clone <this-repo-url>
-cd mobile-messenger
+git clone https://github.com/Anchovy-est/web-messenger.git
+cd web-messenger
 flutter pub get
 ```
 
@@ -165,11 +183,10 @@ docker compose up -d --build
 
 This builds the backend image, starts PostgreSQL, waits for it to report
 healthy, then starts the API server - which runs pending database
-migrations itself on every startup (see [Database Setup](#database-setup)).
-No manual `npm install`, no manual `createdb`, nothing else to run.
+migrations itself on every startup. No manual `npm install`, no manual
+`createdb`, nothing else to run.
 
-The API listens on **host port 3001** (mapped to container port 3000 -
-see the comment in `docker-compose.yml` for why 3000 itself is avoided).
+The API listens on **host port 3001** (mapped to container port 3000).
 Confirm it's up:
 
 ```bash
@@ -188,10 +205,13 @@ docker logs -f mobile-messenger-backend-1
 ```
 
 This is the intended reviewer path -see the
-[Reviewer Guide](#reviewer-guide) for the full walkthrough. To send real
-email instead, set `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/
-`SMTP_FROM` (as environment variables, e.g. in a `.env` file
-docker-compose picks up) before starting the stack.
+[Reviewer Guide](#reviewer-guide) for the full walkthrough.
+
+**This is the short version.** For every environment variable, the full
+database/migrations workflow, the complete API reference, how
+authentication works, how to debug a problem, and how to deploy the
+backend on its own — see the
+**[Backend Developer Guide](backend/README.md)**.
 
 To stop the stack: `docker compose down` (add `-v` to also drop the
 Postgres volume and start completely fresh next time).
@@ -199,25 +219,14 @@ Postgres volume and start completely fresh next time).
 ## Database Setup
 
 Nothing to do manually - this is handled entirely by
-[Backend Setup](#backend-setup). For reference, what happens automatically
-on every `docker compose up`:
+[Backend Setup](#backend-setup): `docker compose up` starts PostgreSQL,
+waits for it to report healthy, then applies any pending migration in
+`backend/migrations/` before starting the API.
 
-1. The `db` service starts PostgreSQL 16 with a persistent named volume
-   (`db_data`) - your data survives container restarts.
-2. The `backend` service waits for Postgres's health check, then its
-   entrypoint runs `node-pg-migrate up`, applying any migration in
-   `backend/migrations/` not yet recorded in the `pgmigrations` table.
-3. The server starts once migrations succeed.
-
-To inspect the database directly:
-
-```bash
-docker exec -it mobile-messenger-db-1 psql -U messenger -d messenger
-```
-
-To add a new migration during development: `cd backend && npm run migrate
-create <name>`, edit the generated file, then restart the backend (or run
-`npm run migrate:up` inside the container) to apply it.
+For everything else - inspecting the database, adding a migration,
+rolling one back, what "seeding" means for this project (there's no
+seed script) - see the Backend Developer Guide's
+**[Database section](backend/README.md#database-setup-migrations-seeding)**.
 
 ## Android Setup
 
@@ -321,49 +330,48 @@ Android tooling locally.
 
 ## Deployment
 
+**Live right now:**
+
+| | URL |
+|---|---|
+| Web app (Vercel) | https://web-messenger-eight.vercel.app |
+| Backend API (Render) | https://web-messenger-backend-eodp.onrender.com |
+| Source (GitHub) | https://github.com/Anchovy-est/web-messenger |
+
 The web client (Flutter web) and the backend (Node/Express + Postgres)
 deploy to two separate free-tier services: **Vercel** for the static web
-build, **Render** for the API + database. Both read from this same repo,
-so a `git push` to your deployed branch is all a redeploy needs once
-they're connected.
+build, **Render** for the API + database. Both read from the GitHub repo
+above, so a `git push` to `main` is all a redeploy needs once they're
+connected (Vercel's Git integration auto-deploys; Render needs a manual
+sync unless you've also enabled auto-deploy on it).
 
 ### 1. Backend (Render)
 
-1. Push this repo to your own GitHub (or GitLab/Bitbucket) remote -
-   Render deploys from a repo it can see, not from your local disk.
-2. In the [Render dashboard](https://dashboard.render.com), **New +
-   -> Blueprint**, and point it at your repo. Render reads
-   [`render.yaml`](render.yaml) at the repo root and provisions a Docker
-   web service (`backend/Dockerfile`) plus a managed Postgres database
-   automatically - migrations run on every deploy via
-   `docker-entrypoint.sh`, same as `docker compose up` locally.
-3. `render.yaml` leaves several env vars for you to fill in by hand in
-   the service's **Environment** tab (marked `sync: false` so they're
-   never committed):
-   - `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `PROFILE_ENCRYPTION_KEY`
-     - generate each with
-       `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
-     The backend **refuses to start** in production if any of these are
-     missing or still a known placeholder value (see
-     `backend/src/config/env.js`).
-   - `CORS_ORIGINS` - leave it unset for now; come back and set it once
-     you have the Vercel URL from step 2 below (the backend also refuses
-     to start in production without this set at all).
-   - `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` -
-     optional. Leave unset and verification/reset codes are logged to
-     the service's own Render logs instead of emailed, same as local
-     dev's `docker logs` fallback (see [Backend Setup](#backend-setup)).
-4. Once deployed, confirm it's up: `https://<your-service>.onrender.com/health`
-   should return `{"status":"ok"}`. Keep this URL - it's `API_BASE_URL`
-   for the web client below.
+The full, detailed walkthrough - including a real quirk in Render's
+Blueprint flow you're likely to hit - lives in the
+**[Backend Developer Guide](backend/README.md#deploying-the-backend-render)**.
+In short:
 
-   **Uploads note:** avatar images and message media are written to a
-   local disk at `/app/uploads`. `render.yaml` requests a persistent
-   disk for this, but Render's **free** instance plan doesn't support
-   persistent disks - on the free plan, uploads are lost on every
-   redeploy/restart. Upgrade the service's plan to get real persistence
-   with no other changes, or swap in object storage (S3-compatible) if
-   you'd rather stay on the free plan.
+1. Push to GitHub - Render deploys from a repo it can see, not your
+   local disk.
+2. In the [Render dashboard](https://dashboard.render.com), **+ New →
+   Blueprint**, point it at the repo. Render reads
+   [`render.yaml`](render.yaml) and provisions a Docker web service
+   (`backend/Dockerfile`) plus a managed Postgres database.
+3. Fill in the `sync: false` secrets it prompts for
+   (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `PROFILE_ENCRYPTION_KEY`,
+   `CORS_ORIGINS`) - see the backend guide for exactly what each does
+   and how to generate them.
+4. Once the service shows **Live**, `https://<your-service>.onrender.com/health`
+   should return `{"status":"ok"}`. That URL is `API_BASE_URL` for the
+   web client below.
+
+**Uploads note:** avatar images and message media are written to a
+local disk at `/app/uploads`, which Render's **free** instance plan
+doesn't persist - uploads are lost on every redeploy/restart on that
+plan. Upgrade the service's plan and add a `disk` block to
+`render.yaml`, or swap in S3-compatible object storage, if you need
+uploads to survive a redeploy.
 
 ### 2. Web client (Vercel)
 
@@ -386,6 +394,16 @@ they're connected.
    already reads at runtime - no client code changes needed.
 3. Deploy. Vercel gives you a URL like
    `https://your-app.vercel.app` - that's the whole web app, live.
+   Redeploying after an env var change: `vercel --prod` from the repo
+   root (with the [Vercel CLI](https://vercel.com/docs/cli) installed
+   and `vercel link` run once), or trigger it from the dashboard.
+
+   **If you fork/copy this repo on Windows**, make sure `scripts/vercel-build.sh`
+   keeps LF line endings, not CRLF - Vercel's Linux build environment
+   fails on a CRLF shebang line with a cryptic `bash\r: No such file or
+   directory` error. The repo's [`.gitattributes`](.gitattributes)
+   (`*.sh text eol=lf`) forces this on checkout; keep that file if you
+   add more shell scripts.
 
 ### 3. Close the loop: lock down CORS
 
@@ -493,7 +511,10 @@ npm run lint     # eslint
 
 Both suites are meant to be run with the Docker backend already up, since
 several backend tests exercise real HTTP/Socket.IO round-trips rather
-than mocking the database.
+than mocking the database. See the Backend Developer Guide's
+**[Testing and Linting section](backend/README.md#testing-and-linting)**
+for what `NODE_ENV=test` changes (rate limits, secret fallbacks) and how
+to run a single test file.
 
 ## Security
 
@@ -594,7 +615,11 @@ than mocking the database.
   meaningfully raises the bar but doesn't fully stop a distributed
   (many-IP) brute-force attempt, a deliberate, documented trade-off
   against over-engineering a local/review-scale project.
-- **No group chats**: every chat is strictly two-party, by invitation.
 - **Email is console-logged, not sent, unless you configure SMTP**, by
   design for local review (see [Backend Setup](#backend-setup)), not
   something to rely on for a real deployment as-is.
+- **Uploaded media doesn't persist across a Render redeploy on the free
+  plan**, and the free instance type spins down when idle and can
+  answer inconsistently for a short window after - see the [Backend
+  Developer Guide](backend/README.md#checking-the-backend-in-production)
+  for what that looks like and why it isn't an application bug.
