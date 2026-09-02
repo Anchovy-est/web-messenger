@@ -61,3 +61,5 @@ backend/npm-debug.log*
 .env
 *.local
 
+.vercel
+.env*
