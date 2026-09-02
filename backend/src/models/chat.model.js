@@ -191,28 +191,6 @@ async function setMuted(chatId, userId, muted) {
   return result.rows.length > 0;
 }
 
-// Used before sending a push, to skip a recipient who muted this
-// chat. Returns false for a non-participant too.
-async function isMuted(chatId, userId) {
-  const result = await query(
-    'SELECT muted_at FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
-    [chatId, userId]
-  );
-  return Boolean(result.rows[0]?.muted_at);
-}
-
-// Everyone else in the chat — who should be notified about something
-// `userId` just did. Empty if `userId` is the only participant (a
-// still-pending invitation), which is correct: nobody else has joined
-// yet.
-async function getOtherParticipantIds(chatId, userId) {
-  const result = await query(
-    'SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2',
-    [chatId, userId]
-  );
-  return result.rows.map((row) => row.user_id);
-}
-
 // Plain membership check for authorizing group-only actions like
 // inviting more people. `chatService.getChat` is what full read/write
 // operations use instead, since those need the chat's data too.
@@ -233,7 +211,5 @@ module.exports = {
   listChatIdsForUser,
   setArchived,
   setMuted,
-  isMuted,
-  getOtherParticipantIds,
   isParticipant,
 };
