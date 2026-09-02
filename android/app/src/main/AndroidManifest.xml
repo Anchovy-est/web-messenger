@@ -20,25 +20,11 @@
          the first time a user taps the mic button, not just by this
          manifest entry being present. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <!-- Android 13+ requires this explicit runtime permission to show
-         any notification at all, including FCM push and the
-         flutter_local_notifications ones shown while the app is in the
-         foreground — requested by PushNotificationService.initialize
-         via FirebaseMessaging.instance.requestPermission(), which
-         covers both under one prompt. -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="mobile_messenger"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config">
-        <!-- Default small icon FCM uses for a notification received
-             while the app has no foreground handler running (killed/
-             backgrounded) — the launcher icon, same as every other
-             notification this app shows. -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

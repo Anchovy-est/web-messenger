@@ -13,9 +13,6 @@ class SecureStorageService {
   // This device's X25519 identity private key seed — must never leave
   // the device.
   static const _identityPrivateKeyKey = 'encryption_identity_private_key';
-  // The user's push-notification opt-in. Absent means "never asked",
-  // treated as enabled by default.
-  static const _notificationsEnabledKey = 'notifications_enabled';
   static const _themeOptionKey = 'app_theme_option';
 
   Future<String?> readAccessToken() => _storage.read(key: _accessTokenKey);
@@ -33,15 +30,6 @@ class SecureStorageService {
 
   Future<void> writeIdentityPrivateKey(String base64Seed) =>
       _storage.write(key: _identityPrivateKeyKey, value: base64Seed);
-
-  /// `true` unless the user has explicitly turned notifications off.
-  Future<bool> readNotificationsEnabled() async {
-    final value = await _storage.read(key: _notificationsEnabledKey);
-    return value != 'false';
-  }
-
-  Future<void> writeNotificationsEnabled(bool enabled) =>
-      _storage.write(key: _notificationsEnabledKey, value: enabled.toString());
 
   /// The stored theme option name, or null if never explicitly chosen.
   Future<String?> readThemeOption() => _storage.read(key: _themeOptionKey);

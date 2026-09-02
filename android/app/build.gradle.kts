@@ -12,12 +12,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // Required by flutter_local_notifications (used to show a
-        // notification while the app is in the foreground — see
-        // lib/services/push_notification_service.dart), which relies on
-        // Java 8+ APIs the Android runtime itself doesn't provide below
-        // API 26 without this desugaring step.
-        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -48,20 +42,4 @@ kotlin {
 
 flutter {
     source = "../.."
-}
-
-dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-}
-
-// Applied conditionally, not in the `plugins {}` block above, because
-// the google-services Gradle plugin fails the entire build immediately
-// if google-services.json is missing — and this repository doesn't ship
-// one (it's a real Firebase project's credentials; see
-// docs/PUSH_NOTIFICATIONS.md for how to generate your own). Until that
-// file exists here, the app builds and runs exactly as before, just
-// without push notifications; dropping in a real google-services.json
-// activates this plugin on the next build with no other change needed.
-if (file("google-services.json").exists()) {
-    apply(plugin = "com.google.gms.google-services")
 }

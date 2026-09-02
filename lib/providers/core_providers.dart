@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/api_client.dart';
 import '../services/encryption_service.dart';
-import '../services/push_notification_service.dart';
 import '../services/secure_storage_service.dart';
 import '../services/socket_service.dart';
 
@@ -36,13 +35,4 @@ final socketConnectionStatusProvider = StreamProvider<bool>((ref) async* {
   final service = ref.watch(socketServiceProvider);
   yield service.isConnected;
   yield* service.connectionStatusStream;
-});
-
-// Safe no-op if this device has no Firebase configuration.
-final pushNotificationServiceProvider = Provider<PushNotificationService>((
-  ref,
-) {
-  final service = PushNotificationService();
-  ref.onDispose(service.dispose);
-  return service;
 });

@@ -6,7 +6,6 @@ import '../../../core/theme/theme_controller.dart';
 import '../../../widgets/loading_view.dart';
 import '../../../widgets/user_avatar.dart';
 import '../../auth/presentation/session_controller.dart';
-import 'notification_settings_controller.dart';
 
 /// Displays the signed-in user's profile — reads straight from
 /// [SessionController] rather than making its own network call.
@@ -16,27 +15,12 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(sessionControllerProvider).user;
-    final notificationsState = ref.watch(
-      notificationSettingsControllerProvider,
-    );
     final themeOption = ref.watch(themeControllerProvider);
 
     if (user == null) {
       // Shouldn't happen, but fail gracefully rather than crash.
       return const Scaffold(body: LoadingView());
     }
-
-    ref.listen(notificationSettingsControllerProvider, (previous, next) {
-      final error = next.hasError ? next.error : null;
-      if (error == null) return;
-      final message = error is NotificationPermissionDeniedException
-          ? 'Notification permission was denied. You can allow it in your '
-                'device settings.'
-          : 'Could not update notification settings. Please try again.';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    });
 
     return Scaffold(
       appBar: AppBar(
@@ -82,23 +66,6 @@ class ProfileScreen extends ConsumerWidget {
                         ? FontStyle.italic
                         : null,
                   ),
-                ),
-                const SizedBox(height: 32),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Push notifications'),
-                  subtitle: const Text(
-                    'New messages and chat invitations. Mute individual chats '
-                    'from that chat\'s own screen.',
-                  ),
-                  value: notificationsState.valueOrNull ?? true,
-                  onChanged: notificationsState.isLoading
-                      ? null
-                      : (value) => ref
-                            .read(
-                              notificationSettingsControllerProvider.notifier,
-                            )
-                            .setEnabled(value),
                 ),
                 const SizedBox(height: 24),
                 Align(

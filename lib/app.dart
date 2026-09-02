@@ -1,12 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/chats/data/message_delivery_ack_provider.dart';
-import 'providers/core_providers.dart';
 import 'routing/app_router.dart';
 import 'widgets/floral_background.dart';
 
@@ -18,28 +15,6 @@ class MessengerApp extends ConsumerStatefulWidget {
 }
 
 class _MessengerAppState extends ConsumerState<MessengerApp> {
-  StreamSubscription<String>? _chatIdToOpenSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    final pushService = ref.read(pushNotificationServiceProvider);
-    // Subscribe before initialize() so a launch-tap event isn't missed.
-    _chatIdToOpenSubscription = pushService.chatIdToOpen.listen(_openChat);
-    unawaited(pushService.initialize());
-  }
-
-  void _openChat(String chatId) {
-    // Read fresh each time — the router is rebuilt on session changes.
-    ref.read(appRouterProvider).push('/chats/$chatId');
-  }
-
-  @override
-  void dispose() {
-    _chatIdToOpenSubscription?.cancel();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(appRouterProvider);

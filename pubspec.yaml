@@ -65,12 +65,6 @@ dependencies:
   record: ^6.1.1
   audioplayers: ^6.1.0
 
-  # Push notifications (Firebase Cloud Messaging) and displaying them
-  # while the app is in the foreground
-  firebase_core: ^3.8.0
-  firebase_messaging: ^15.1.6
-  flutter_local_notifications: ^18.0.1
-
   # Renders the Floral theme's decorative flower artwork
   # (assets/flowers/flower.svg), recolored per instance
   flutter_svg: ^2.0.16

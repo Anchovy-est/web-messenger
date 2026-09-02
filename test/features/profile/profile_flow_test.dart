@@ -55,21 +55,6 @@ class _FakeProfileRepository extends ProfileRepository {
 
   User? lastUpdate;
   Object? errorToThrow;
-  final List<String> registeredTokens = [];
-  final List<String> unregisteredTokens = [];
-
-  @override
-  Future<void> registerPushToken(
-    String token, {
-    String platform = 'android',
-  }) async {
-    registeredTokens.add(token);
-  }
-
-  @override
-  Future<void> unregisterPushToken(String token) async {
-    unregisteredTokens.add(token);
-  }
 
   @override
   Future<User> updateProfile({
@@ -177,81 +162,6 @@ void main() {
 
     expect(find.text('Username is required.'), findsOneWidget);
   });
-
-  // --- Push notifications toggle -----------------------------------------
-  //
-  // No Firebase project is configured here, so
-  // `PushNotificationService.isAvailable` is always false — a "turn on"
-  // attempt can never get a token, same as a real device where the
-  // permission prompt was declined. That's the case worth proving: the
-  // toggle shows an error and reverts instead of claiming success it
-  // can't back up. "Turn off" has no such dependency, so it genuinely
-  // succeeds.
-
-  testWidgets('notifications are on by default', (tester) async {
-    await _pumpAuthenticatedApp(tester);
-
-    await tester.tap(find.byIcon(Icons.person_outline));
-    await tester.pumpAndSettle();
-
-    final toggle = tester.widget<SwitchListTile>(
-      find.widgetWithText(SwitchListTile, 'Push notifications'),
-    );
-    expect(toggle.value, true);
-  });
-
-  testWidgets(
-    'turning notifications off unregisters the push token and persists the choice',
-    (tester) async {
-      final profileRepository = await _pumpAuthenticatedApp(tester);
-
-      await tester.tap(find.byIcon(Icons.person_outline));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.widgetWithText(SwitchListTile, 'Push notifications'),
-      );
-      await tester.pumpAndSettle();
-
-      final toggle = tester.widget<SwitchListTile>(
-        find.widgetWithText(SwitchListTile, 'Push notifications'),
-      );
-      expect(toggle.value, false);
-      // No real token exists here, so there was nothing to actually
-      // unregister — what matters is turning it off never throws and
-      // the choice is reflected in the UI.
-      expect(profileRepository.unregisteredTokens, isEmpty);
-    },
-  );
-
-  testWidgets(
-    'turning notifications on shows an error and leaves the toggle off, '
-    'since no push token can be obtained here',
-    (tester) async {
-      await _pumpAuthenticatedApp(tester);
-
-      await tester.tap(find.byIcon(Icons.person_outline));
-      await tester.pumpAndSettle();
-      // Off, then attempt on — avoids relying on the default-enabled
-      // state's own "on -> on" tap behavior.
-      await tester.tap(
-        find.widgetWithText(SwitchListTile, 'Push notifications'),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.widgetWithText(SwitchListTile, 'Push notifications'),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.textContaining('Notification permission was denied'),
-        findsOneWidget,
-      );
-      final toggle = tester.widget<SwitchListTile>(
-        find.widgetWithText(SwitchListTile, 'Push notifications'),
-      );
-      expect(toggle.value, false);
-    },
-  );
 
   // --- Floral theme -----------------------------------------------------
 

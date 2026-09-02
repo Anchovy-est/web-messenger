@@ -19,14 +19,12 @@ class FakeSecureStorageService implements SecureStorageService {
     this.accessToken,
     this.refreshToken,
     this.identityPrivateKey = testIdentityPrivateKeySeed,
-    this.notificationsEnabled = true,
     this.themeOption,
   });
 
   String? accessToken;
   String? refreshToken;
   String? identityPrivateKey;
-  bool notificationsEnabled;
   String? themeOption;
 
   @override
@@ -53,13 +51,6 @@ class FakeSecureStorageService implements SecureStorageService {
     accessToken = null;
     refreshToken = null;
   }
-
-  @override
-  Future<bool> readNotificationsEnabled() async => notificationsEnabled;
-
-  @override
-  Future<void> writeNotificationsEnabled(bool enabled) async =>
-      notificationsEnabled = enabled;
 
   @override
   Future<String?> readThemeOption() async => themeOption;

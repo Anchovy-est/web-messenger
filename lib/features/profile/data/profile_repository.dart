@@ -49,34 +49,6 @@ class ProfileRepository {
     }
   }
 
-  /// Registers this device's push token with the backend.
-  Future<void> registerPushToken(
-    String token, {
-    String platform = 'android',
-  }) async {
-    try {
-      await _apiClient.dio.put(
-        '/users/me/push-token',
-        data: {'token': token, 'platform': platform},
-      );
-    } on DioException catch (e) {
-      throw ApiException.fromDioException(e);
-    }
-  }
-
-  /// Unregisters this device's push token — on logout, or when the
-  /// in-app toggle is turned off.
-  Future<void> unregisterPushToken(String token) async {
-    try {
-      await _apiClient.dio.delete(
-        '/users/me/push-token',
-        data: {'token': token},
-      );
-    } on DioException catch (e) {
-      throw ApiException.fromDioException(e);
-    }
-  }
-
   /// Bytes + filename, not a file path — works on Web too, where a
   /// picked file has no real path. The backend re-validates the file
   /// type by magic bytes either way.

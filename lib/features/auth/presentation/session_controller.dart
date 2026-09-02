@@ -8,7 +8,6 @@ import '../../../core/api_exception.dart';
 import '../../../models/user.dart';
 import '../../../providers/core_providers.dart';
 import '../../../services/encryption_service.dart';
-import '../../../services/push_notification_service.dart';
 import '../../../services/secure_storage_service.dart';
 import '../../../services/socket_service.dart';
 import '../../profile/data/profile_providers.dart';
@@ -27,11 +26,7 @@ class SessionController extends StateNotifier<SessionState> {
     this._socketService,
     this._encryptionService,
     this._profileRepository,
-    this._pushNotificationService,
   ) : super(SessionState.unknown) {
-    _tokenRefreshSubscription = _pushNotificationService.onTokenRefresh.listen(
-      _onTokenRefresh,
-    );
     _restore();
   }
 
@@ -40,8 +35,6 @@ class SessionController extends StateNotifier<SessionState> {
   final SocketService _socketService;
   final EncryptionService _encryptionService;
   final ProfileRepository _profileRepository;
-  final PushNotificationService _pushNotificationService;
-  late final StreamSubscription<String> _tokenRefreshSubscription;
 
   Future<void> _restore() async {
     final accessToken = await _secureStorage.readAccessToken();
@@ -54,7 +47,6 @@ class SessionController extends StateNotifier<SessionState> {
       state = SessionState.authenticated(user);
       _socketService.connect(accessToken);
       unawaited(_ensureIdentityKeyPair(user.publicKey));
-      unawaited(_ensurePushNotificationsRegistered());
     } on ApiException catch (e) {
       if (_isConnectivityFailure(e)) {
         // Couldn't reach the backend — leave tokens alone and land on a
@@ -95,7 +87,6 @@ class SessionController extends StateNotifier<SessionState> {
     state = SessionState.authenticated(result.user);
     _socketService.connect(result.accessToken);
     unawaited(_ensureIdentityKeyPair(result.user.publicKey));
-    unawaited(_ensurePushNotificationsRegistered());
   }
 
   /// Generates this device's identity keypair if it doesn't have one
@@ -127,31 +118,6 @@ class SessionController extends StateNotifier<SessionState> {
     }
   }
 
-  /// Registers this device's FCM token, unless the user has explicitly
-  /// turned notifications off. Fire-and-forget, same reasoning as
-  /// [_ensureIdentityKeyPair].
-  Future<void> _ensurePushNotificationsRegistered() async {
-    final enabled = await _secureStorage.readNotificationsEnabled();
-    if (!enabled) return;
-    try {
-      final token = await _pushNotificationService
-          .requestPermissionAndGetToken();
-      if (token == null) return; // denied, or Firebase not configured
-      await _profileRepository.registerPushToken(token);
-    } catch (_) {
-      // Best-effort.
-    }
-  }
-
-  Future<void> _onTokenRefresh(String token) async {
-    if (!state.isAuthenticated) return;
-    try {
-      await _profileRepository.registerPushToken(token);
-    } catch (_) {
-      // Best-effort — misses just delay the next successful push.
-    }
-  }
-
   Future<void> logout() async {
     final refreshToken = await _secureStorage.readRefreshToken();
     if (refreshToken != null) {
@@ -160,14 +126,6 @@ class SessionController extends StateNotifier<SessionState> {
       } catch (_) {
         // Best-effort — local session is cleared below regardless.
       }
-    }
-    try {
-      final token = await _pushNotificationService.getCurrentToken();
-      if (token != null) {
-        await _profileRepository.unregisterPushToken(token);
-      }
-    } catch (_) {
-      // Best-effort — must never block actually logging out.
     }
     await _secureStorage.clearTokens();
     state = SessionState.unauthenticated;
@@ -201,12 +159,6 @@ class SessionController extends StateNotifier<SessionState> {
     state = SessionState.unauthenticated;
     _socketService.disconnect();
   }
-
-  @override
-  void dispose() {
-    _tokenRefreshSubscription.cancel();
-    super.dispose();
-  }
 }
 
 final sessionControllerProvider =
@@ -217,7 +169,6 @@ final sessionControllerProvider =
         ref.watch(socketServiceProvider),
         ref.watch(encryptionServiceProvider),
         ref.watch(profileRepositoryProvider),
-        ref.watch(pushNotificationServiceProvider),
       );
       ref.watch(apiClientProvider).onSessionExpired =
           controller.forceLogoutLocally;
